@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/financial';
 import { exportToExcel, exportToPDF } from '@/lib/export';
 import { PayModal } from '@/components/PayModal';
+import { ImportTransactionsDialog } from '@/components/ImportTransactionsDialog';
 
 interface ReceitaRow {
   id: string; data: string; categoria_nome: string; subcategoria_nome: string;
@@ -61,23 +62,27 @@ export default function Receitas() {
   const [sortField, setSortField] = useState<SortField>('data');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
+  const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string }[]>([]);
   const [contas, setContas] = useState<{ id: string; nome: string }[]>([]);
   const [bloqueios, setBloqueios] = useState<{ tipo: string; mes_ano: string }[]>([]);
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payIds, setPayIds] = useState<string[]>([]);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => { if (user) loadData(); }, [user]);
 
   async function loadData() {
     setLoading(true);
-    const [catRes, contRes, bloqRes] = await Promise.all([
+    const [catRes, subRes, contRes, bloqRes] = await Promise.all([
       supabase.from('categorias').select('id, nome').order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id').eq('bloqueada', false).order('nome'),
       supabase.from('contas').select('id, nome').eq('bloqueada', false).order('nome'),
       supabase.from('bloqueios').select('tipo, mes_ano'),
     ]);
     setCategorias(catRes.data || []);
+    setSubcategorias(subRes.data || []);
     setContas(contRes.data || []);
     setBloqueios(bloqRes.data || []);
 
@@ -159,6 +164,7 @@ export default function Receitas() {
         <div><h1 className="text-2xl font-bold">Receitas</h1><p className="text-muted-foreground text-sm">Gerencie todas as suas receitas</p></div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}><Filter className="mr-1 h-4 w-4" /> Filtros</Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}><FileSpreadsheet className="mr-1 h-4 w-4" /> Importar</Button>
           <Button variant="outline" size="sm" onClick={() => exportToExcel(getExportData(), exportColumns, 'receitas')}><FileSpreadsheet className="mr-1 h-4 w-4" /> Excel</Button>
           <Button variant="outline" size="sm" onClick={() => exportToPDF(getExportData(), exportColumns, 'Relatório de Receitas', 'receitas')}><FileText className="mr-1 h-4 w-4" /> PDF</Button>
           <Button size="sm" onClick={() => navigate('/nova-receita')}><Plus className="mr-1 h-4 w-4" /> Nova Receita</Button>
@@ -245,6 +251,7 @@ export default function Receitas() {
 
       <PayModal open={payModalOpen} onClose={() => setPayModalOpen(false)} onConfirm={(dt, ct) => handlePay(payIds, dt, ct)} contas={contas} title="Confirmar Recebimento" confirmLabel="Confirmar" />
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar exclusão</AlertDialogTitle><AlertDialogDescription>Tem certeza que deseja excluir {deleteIds.length} receita(s)?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(deleteIds)}>Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      {user && <ImportTransactionsDialog kind="receitas" userId={user.id} open={importOpen} onOpenChange={setImportOpen} categories={categorias} subcategories={subcategorias} accounts={contas} onImported={loadData} />}
     </div>
   );
 }

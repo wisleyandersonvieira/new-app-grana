@@ -58,6 +58,7 @@ import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/financial';
 import { exportToExcel, exportToPDF } from '@/lib/export';
 import { PayModal } from '@/components/PayModal';
+import { ImportTransactionsDialog } from '@/components/ImportTransactionsDialog';
 
 interface DespesaRow {
   id: string;
@@ -108,6 +109,7 @@ export default function Despesas() {
 
   // Reference data
   const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
+  const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string }[]>([]);
   const [contas, setContas] = useState<{ id: string; nome: string }[]>([]);
   const [bloqueios, setBloqueios] = useState<{ tipo: string; mes_ano: string }[]>([]);
 
@@ -116,6 +118,7 @@ export default function Despesas() {
   const [payIds, setPayIds] = useState<string[]>([]);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -124,12 +127,14 @@ export default function Despesas() {
 
   async function loadData() {
     setLoading(true);
-    const [catRes, contRes, bloqRes] = await Promise.all([
+    const [catRes, subRes, contRes, bloqRes] = await Promise.all([
       supabase.from('categorias').select('id, nome').order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id').eq('bloqueada', false).order('nome'),
       supabase.from('contas').select('id, nome, tipo').eq('bloqueada', false).order('nome'),
       supabase.from('bloqueios').select('tipo, mes_ano'),
     ]);
     setCategorias(catRes.data || []);
+    setSubcategorias(subRes.data || []);
     setContas((contRes.data || []).map((c: any) => ({ id: c.id, nome: c.nome })));
     setBloqueios(bloqRes.data || []);
 
@@ -372,6 +377,9 @@ export default function Despesas() {
           <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
             <Filter className="mr-1 h-4 w-4" /> Filtros
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <FileSpreadsheet className="mr-1 h-4 w-4" /> Importar
+          </Button>
           <Button variant="outline" size="sm" onClick={() => exportToExcel(getExportData(), exportColumns, 'despesas')}>
             <FileSpreadsheet className="mr-1 h-4 w-4" /> Excel
           </Button>
@@ -580,6 +588,18 @@ export default function Despesas() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {user && (
+        <ImportTransactionsDialog
+          kind="despesas"
+          userId={user.id}
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          categories={categorias}
+          subcategories={subcategorias}
+          accounts={contas}
+          onImported={loadData}
+        />
+      )}
     </div>
   );
 }
