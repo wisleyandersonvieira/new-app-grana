@@ -149,11 +149,15 @@ export type Database = {
           competencia: string | null
           conta_id: string | null
           created_at: string | null
+          data: string | null
           data_pagamento: string | null
           descricao: string
           despesa_pai_id: string | null
           id: string
+          lote_id: string | null
           observacao: string | null
+          paga: boolean | null
+          parcela: number | null
           parcela_atual: number | null
           status: string | null
           subcategoria_id: string | null
@@ -167,11 +171,15 @@ export type Database = {
           competencia?: string | null
           conta_id?: string | null
           created_at?: string | null
+          data?: string | null
           data_pagamento?: string | null
           descricao: string
           despesa_pai_id?: string | null
           id?: string
+          lote_id?: string | null
           observacao?: string | null
+          paga?: boolean | null
+          parcela?: number | null
           parcela_atual?: number | null
           status?: string | null
           subcategoria_id?: string | null
@@ -185,11 +193,15 @@ export type Database = {
           competencia?: string | null
           conta_id?: string | null
           created_at?: string | null
+          data?: string | null
           data_pagamento?: string | null
           descricao?: string
           despesa_pai_id?: string | null
           id?: string
+          lote_id?: string | null
           observacao?: string | null
+          paga?: boolean | null
+          parcela?: number | null
           parcela_atual?: number | null
           status?: string | null
           subcategoria_id?: string | null
@@ -229,6 +241,7 @@ export type Database = {
           data_vencimento: string | null
           id: string
           mes_ano: string
+          observacao: string | null
           status: string | null
           updated_at: string | null
           usuario_id: string
@@ -240,6 +253,7 @@ export type Database = {
           data_vencimento?: string | null
           id?: string
           mes_ano: string
+          observacao?: string | null
           status?: string | null
           updated_at?: string | null
           usuario_id: string
@@ -251,6 +265,7 @@ export type Database = {
           data_vencimento?: string | null
           id?: string
           mes_ano?: string
+          observacao?: string | null
           status?: string | null
           updated_at?: string | null
           usuario_id?: string
@@ -339,6 +354,7 @@ export type Database = {
           created_at: string | null
           id: string
           mes_ano: string
+          tipo: string | null
           usuario_id: string
           valor: number
         }
@@ -347,6 +363,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           mes_ano: string
+          tipo?: string | null
           usuario_id: string
           valor: number
         }
@@ -355,6 +372,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           mes_ano?: string
+          tipo?: string | null
           usuario_id?: string
           valor?: number
         }
@@ -373,7 +391,9 @@ export type Database = {
           created_at: string | null
           email: string | null
           id: string
+          is_admin: boolean | null
           nome: string | null
+          status: string | null
           ultimo_acesso: string | null
           updated_at: string | null
           user_id: string
@@ -382,7 +402,9 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           id?: string
+          is_admin?: boolean | null
           nome?: string | null
+          status?: string | null
           ultimo_acesso?: string | null
           updated_at?: string | null
           user_id: string
@@ -391,7 +413,9 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           id?: string
+          is_admin?: boolean | null
           nome?: string | null
+          status?: string | null
           ultimo_acesso?: string | null
           updated_at?: string | null
           user_id?: string
@@ -404,10 +428,14 @@ export type Database = {
           competencia: string | null
           conta_id: string | null
           created_at: string | null
+          data: string | null
           data_pagamento: string | null
           descricao: string
           id: string
+          lote_id: string | null
           observacao: string | null
+          paga: boolean | null
+          parcela: number | null
           status: string | null
           subcategoria_id: string | null
           updated_at: string | null
@@ -419,10 +447,14 @@ export type Database = {
           competencia?: string | null
           conta_id?: string | null
           created_at?: string | null
+          data?: string | null
           data_pagamento?: string | null
           descricao: string
           id?: string
+          lote_id?: string | null
           observacao?: string | null
+          paga?: boolean | null
+          parcela?: number | null
           status?: string | null
           subcategoria_id?: string | null
           updated_at?: string | null
@@ -434,10 +466,14 @@ export type Database = {
           competencia?: string | null
           conta_id?: string | null
           created_at?: string | null
+          data?: string | null
           data_pagamento?: string | null
           descricao?: string
           id?: string
+          lote_id?: string | null
           observacao?: string | null
+          paga?: boolean | null
+          parcela?: number | null
           status?: string | null
           subcategoria_id?: string | null
           updated_at?: string | null
@@ -470,24 +506,33 @@ export type Database = {
       }
       subcategorias: {
         Row: {
+          bloqueada: boolean | null
           categoria_id: string
           created_at: string | null
           id: string
           nome: string
+          obrigatoria: boolean | null
+          subcategoria_padrao: boolean | null
           usuario_id: string
         }
         Insert: {
+          bloqueada?: boolean | null
           categoria_id: string
           created_at?: string | null
           id?: string
           nome: string
+          obrigatoria?: boolean | null
+          subcategoria_padrao?: boolean | null
           usuario_id: string
         }
         Update: {
+          bloqueada?: boolean | null
           categoria_id?: string
           created_at?: string | null
           id?: string
           nome?: string
+          obrigatoria?: boolean | null
+          subcategoria_padrao?: boolean | null
           usuario_id?: string
         }
         Relationships: [
