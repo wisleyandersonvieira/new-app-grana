@@ -10,8 +10,8 @@ import { formatCurrency, formatCompetencia } from '@/lib/financial';
 import { Badge } from '@/components/ui/badge';
 
 type FaturaRow = {
-  id: string; competencia: string; vencimento: string; valor_total: number | null;
-  cartao_id: string; paga: boolean;
+  id: string; mes_ano: string; data_vencimento: string | null; valor_total: number | null;
+  conta_id: string; paga: boolean;
 };
 
 export default function Faturas() {
@@ -23,7 +23,7 @@ export default function Faturas() {
   const fetchFaturas = async () => {
     if (!user) return;
     const [{ data: fats }, { data: contas }, { data: despesas }] = await Promise.all([
-      supabase.from('faturas_cartao').select('id, competencia, vencimento, valor_total, cartao_id').eq('usuario_id', user.id).order('vencimento', { ascending: false }),
+      supabase.from('faturas_cartao').select('id, mes_ano, data_vencimento, valor_total, conta_id').eq('usuario_id', user.id).order('data_vencimento', { ascending: false }),
       supabase.from('contas').select('id, nome').eq('usuario_id', user.id),
       supabase.from('despesas').select('lote_id, paga').eq('usuario_id', user.id).not('lote_id', 'is', null),
     ]);
@@ -88,9 +88,9 @@ export default function Faturas() {
                 <tbody>
                   {faturas.map((fat, i) => (
                     <tr key={fat.id} className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${i % 2 === 1 ? 'bg-muted/20' : ''}`}>
-                      <td className="py-3 px-4 font-medium">{contasMap[fat.cartao_id] ?? '-'}</td>
-                      <td className="py-3 px-4">{formatCompetencia(fat.competencia)}</td>
-                      <td className="py-3 px-4">{fat.vencimento}</td>
+                      <td className="py-3 px-4 font-medium">{contasMap[fat.conta_id] ?? '-'}</td>
+                      <td className="py-3 px-4">{formatCompetencia(fat.mes_ano)}</td>
+                      <td className="py-3 px-4">{fat.data_vencimento}</td>
                       <td className="py-3 px-4 font-semibold">{formatCurrency(fat.valor_total ?? 0)}</td>
                       <td className="py-3 px-4">
                         {fat.paga ? (

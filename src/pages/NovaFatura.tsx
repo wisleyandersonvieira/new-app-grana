@@ -31,9 +31,9 @@ export default function NovaFatura() {
     const competencia = `${ano}-${mes.padStart(2, '0')}`;
     setLoading(true);
     const { data, error } = await supabase.from('faturas_cartao').insert({
-      cartao_id: cartaoId,
-      vencimento,
-      competencia,
+      conta_id: cartaoId,
+      data_vencimento: vencimento,
+      mes_ano: competencia,
       observacao: observacao || null,
       usuario_id: user.id,
     }).select('id').single();

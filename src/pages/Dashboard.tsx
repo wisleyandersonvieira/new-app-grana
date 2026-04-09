@@ -81,15 +81,15 @@ export default function Dashboard() {
   }
 
   async function loadMetas(comp: string) {
-    const { data: metasData } = await supabase.from('metas').select('*, categorias(nome)').eq('competencia', comp);
+    const { data: metasData } = await supabase.from('metas').select('*, categorias(nome)').eq('mes_ano', comp);
     if (!metasData || metasData.length === 0) { setMetas([]); return; }
     const result: MetaProgress[] = [];
     for (const meta of metasData) {
       let realizado = 0;
-      if (meta.tipo === 'receita') { const { data } = await supabase.from('receitas').select('valor').eq('competencia', comp).eq('paga', true); realizado = data?.reduce((s, r) => s + r.valor, 0) || 0; }
-      else if (meta.tipo === 'despesa') { const { data } = await supabase.from('despesas').select('valor').eq('competencia', comp).eq('paga', true); realizado = data?.reduce((s, d) => s + d.valor, 0) || 0; }
-      else if (meta.tipo === 'categoria' && meta.categoria_id) { const { data } = await supabase.from('despesas').select('valor').eq('competencia', comp).eq('categoria_id', meta.categoria_id).eq('paga', true); realizado = data?.reduce((s, d) => s + d.valor, 0) || 0; }
-      result.push({ tipo: meta.tipo, categoria_nome: (meta as any).categorias?.nome || null, valor_meta: meta.valor, valor_realizado: realizado });
+      if ((meta as any).tipo === 'receita') { const { data } = await supabase.from('receitas').select('valor').eq('competencia', comp).eq('paga', true); realizado = data?.reduce((s, r) => s + r.valor, 0) || 0; }
+      else if ((meta as any).tipo === 'despesa') { const { data } = await supabase.from('despesas').select('valor').eq('competencia', comp).eq('paga', true); realizado = data?.reduce((s, d) => s + d.valor, 0) || 0; }
+      else if ((meta as any).tipo === 'categoria' && meta.categoria_id) { const { data } = await supabase.from('despesas').select('valor').eq('competencia', comp).eq('categoria_id', meta.categoria_id).eq('paga', true); realizado = data?.reduce((s, d) => s + d.valor, 0) || 0; }
+      result.push({ tipo: (meta as any).tipo, categoria_nome: (meta as any).categorias?.nome || null, valor_meta: meta.valor, valor_realizado: realizado });
     }
     setMetas(result);
   }
