@@ -26,7 +26,7 @@ export default function Metas() {
     if (!user) return;
     const fetchMetas = async () => {
       const [{ data: metas }, { data: categorias }, { data: receitas }, { data: despesas }, { data: itensFatura }] = await Promise.all([
-        supabase.from('metas').select('*').eq('usuario_id', user.id).eq('competencia', comp),
+        supabase.from('metas').select('*').eq('usuario_id', user.id).eq('mes_ano', comp),
         supabase.from('categorias').select('id, nome').eq('usuario_id', user.id),
         supabase.from('receitas').select('valor, paga').eq('usuario_id', user.id).eq('competencia', comp).eq('paga', true),
         supabase.from('despesas').select('valor, paga, categoria_id').eq('usuario_id', user.id).eq('competencia', comp).eq('paga', true),
@@ -54,7 +54,7 @@ export default function Metas() {
       const desp: MetaView[] = [];
       const cat: MetaView[] = [];
 
-      metas?.forEach(m => {
+      metas?.forEach((m: any) => {
         let realizado = 0;
         if (m.tipo === 'receita') realizado = totalReceitas;
         else if (m.tipo === 'despesa') realizado = totalDespesas;

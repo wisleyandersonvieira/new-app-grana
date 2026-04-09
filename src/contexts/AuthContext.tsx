@@ -5,10 +5,13 @@ import { supabase } from '@/integrations/supabase/client';
 interface Profile {
   id: string;
   user_id: string;
-  nome: string;
-  is_admin: boolean;
-  status: string;
+  nome: string | null;
+  email: string | null;
+  is_admin: boolean | null;
+  status: string | null;
+  ultimo_acesso: string | null;
   created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface SubscriptionInfo {

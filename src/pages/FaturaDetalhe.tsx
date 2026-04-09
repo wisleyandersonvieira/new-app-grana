@@ -48,16 +48,16 @@ export default function FaturaDetalhe() {
     setIsPaid(despConsolidada?.paga === true);
 
     // Fetch cartão name
-    const { data: cartao } = await supabase.from('contas').select('nome').eq('id', fat.cartao_id).single();
+    const { data: cartao } = await supabase.from('contas').select('nome').eq('id', fat.conta_id).single();
     if (cartao) setCartaoNome(cartao.nome);
 
     // Fetch previous fatura total
     const { data: prevFats } = await supabase.from('faturas_cartao')
       .select('valor_total')
-      .eq('cartao_id', fat.cartao_id)
+      .eq('conta_id', fat.conta_id)
       .eq('usuario_id', user.id)
-      .lt('competencia', fat.competencia)
-      .order('competencia', { ascending: false })
+      .lt('mes_ano', fat.mes_ano)
+      .order('mes_ano', { ascending: false })
       .limit(1);
     setFaturaAnteriorTotal(prevFats && prevFats.length > 0 ? prevFats[0].valor_total : null);
 
@@ -119,8 +119,8 @@ export default function FaturaDetalhe() {
         categoria_id: item.categoria_id || null,
         subcategoria_id: item.subcategoria_id || null,
         valor: parseCurrencyInput(item.valor),
-        competencia: fatura.competencia,
-        data: fatura.vencimento,
+        competencia: fatura.mes_ano,
+        data: fatura.data_vencimento,
       }));
       const { error: insertErr } = await supabase.from('itens_fatura').insert(inserts);
       if (insertErr) { toast.error('Erro ao salvar itens.'); setLoading(false); return; }
@@ -160,14 +160,14 @@ export default function FaturaDetalhe() {
         usuario_id: user.id,
         categoria_id: catId,
         subcategoria_id: subId,
-        descricao: `Fatura ${cartaoNome} - ${formatCompetencia(fatura.competencia)}`,
+        descricao: `Fatura ${cartaoNome} - ${formatCompetencia(fatura.mes_ano)}`,
         valor: total,
-        data: fatura.vencimento,
-        competencia: fatura.competencia,
-        conta_id: fatura.cartao_id,
+        data: fatura.data_vencimento,
+        competencia: fatura.mes_ano,
+        conta_id: fatura.conta_id,
         paga: false,
         lote_id: fatura.id,
-      });
+      } as any);
     }
 
     toast.success('Fatura salva com sucesso!');
@@ -182,7 +182,7 @@ export default function FaturaDetalhe() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Fatura — {cartaoNome}</h1>
-          <p className="text-muted-foreground">{formatCompetencia(fatura.competencia)} • Vencimento: {fatura.vencimento}</p>
+          <p className="text-muted-foreground">{formatCompetencia(fatura.mes_ano)} • Vencimento: {fatura.data_vencimento}</p>
         </div>
         <Button variant="outline" onClick={() => navigate('/faturas')}>Voltar</Button>
       </div>

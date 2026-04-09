@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { formatCurrency, parseCurrencyInput, getMonthName, getCurrentCompetencia } from '@/lib/financial';
 
 type Meta = {
-  id: string; tipo: string; competencia: string; valor: number; categoria_id: string | null;
+  id: string; tipo: string | null; mes_ano: string; valor: number; categoria_id: string | null;
 };
 type Categoria = { id: string; nome: string };
 
@@ -46,10 +46,10 @@ export default function CadastrarMetas() {
   const fetchData = async () => {
     if (!user) return;
     const [{ data: m }, { data: c }] = await Promise.all([
-      supabase.from('metas').select('*').eq('usuario_id', user.id).order('competencia'),
+      supabase.from('metas').select('*').eq('usuario_id', user.id).order('mes_ano'),
       supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).order('nome'),
     ]);
-    if (m) setMetas(m);
+    if (m) setMetas(m as any);
     if (c) setCategorias(c);
   };
 
@@ -73,14 +73,14 @@ export default function CadastrarMetas() {
     for (const comp of competencias) {
       // Check duplicate
       const existing = metas.find(m =>
-        m.competencia === comp && m.tipo === tipo && (tipo !== 'categoria' || m.categoria_id === categoriaId)
+        m.mes_ano === comp && m.tipo === tipo && (tipo !== 'categoria' || m.categoria_id === categoriaId)
       );
       if (existing) continue;
 
       const { error } = await supabase.from('metas').insert({
-        usuario_id: user.id, tipo, competencia: comp, valor,
+        usuario_id: user.id, tipo, mes_ano: comp, valor,
         categoria_id: tipo === 'categoria' ? categoriaId : null,
-      });
+      } as any);
       if (!error) created++;
     }
 
@@ -132,9 +132,9 @@ export default function CadastrarMetas() {
 
   const filtered = useMemo(() => {
     return metas.filter(m => {
-      if (filterCompInicio && m.competencia < filterCompInicio) return false;
-      if (filterCompFim && m.competencia > filterCompFim) return false;
-      if (filterAno && !m.competencia.startsWith(filterAno)) return false;
+      if (filterCompInicio && m.mes_ano < filterCompInicio) return false;
+      if (filterCompFim && m.mes_ano > filterCompFim) return false;
+      if (filterAno && !m.mes_ano.startsWith(filterAno)) return false;
       if (filterTipo !== 'all' && m.tipo !== filterTipo) return false;
       if (filterCats.length > 0 && m.categoria_id && !filterCats.includes(m.categoria_id)) return false;
       return true;
@@ -269,7 +269,7 @@ export default function CadastrarMetas() {
                 </tr></thead>
                 <tbody>
                   {filtered.map(m => {
-                    const [y, mo] = m.competencia.split('-');
+                    const [y, mo] = m.mes_ano.split('-');
                     return (
                       <tr key={m.id} className="border-b hover:bg-muted/50">
                         <td className="py-2 px-2"><Checkbox checked={selectedIds.has(m.id)} onCheckedChange={() => toggleSelect(m.id)} /></td>
