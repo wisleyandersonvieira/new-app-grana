@@ -44,8 +44,7 @@ export default function FaturaDetalhe() {
     setFatura(fat);
 
     // Check if paid (consolidated despesa with lote_id = fatura id, paga = true)
-    const { data: despConsolidada } = await supabase.from('despesas').select('paga').eq('lote_id', id).maybeSingle();
-    setIsPaid(despConsolidada?.paga === true);
+    setIsPaid(fat.status === 'quitada');
 
     // Fetch cartão name
     const { data: cartao } = await supabase.from('contas').select('nome').eq('id', fat.conta_id).single();
