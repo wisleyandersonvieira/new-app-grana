@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 
 type FaturaRow = {
   id: string; mes_ano: string; data_vencimento: string | null; valor_total: number | null;
-  conta_id: string; paga: boolean;
+  conta_id: string; status: string | null;
 };
 
 export default function Faturas() {
@@ -22,14 +22,11 @@ export default function Faturas() {
 
   const fetchFaturas = async () => {
     if (!user) return;
-    const [{ data: fats }, { data: contas }, { data: despesas }] = await Promise.all([
-      supabase.from('faturas_cartao').select('id, mes_ano, data_vencimento, valor_total, conta_id').eq('usuario_id', user.id).order('data_vencimento', { ascending: false }),
+    const [{ data: fats }, { data: contas }] = await Promise.all([
+      supabase.from('faturas_cartao').select('id, mes_ano, data_vencimento, valor_total, conta_id, status').eq('usuario_id', user.id).order('data_vencimento', { ascending: false }),
       supabase.from('contas').select('id, nome').eq('usuario_id', user.id),
-      supabase.from('despesas').select('lote_id, paga').eq('usuario_id', user.id).not('lote_id', 'is', null),
     ]);
-    const paidLotes = new Set<string>();
-    despesas?.forEach(d => { if (d.paga && d.lote_id) paidLotes.add(d.lote_id); });
-    if (fats) setFaturas(fats.map(f => ({ ...f, paga: paidLotes.has(f.id) })));
+    if (fats) setFaturas(fats);
     if (contas) {
       const map: Record<string, string> = {};
       contas.forEach(c => { map[c.id] = c.nome; });
@@ -40,7 +37,7 @@ export default function Faturas() {
   useEffect(() => { fetchFaturas(); }, [user]);
 
   const handleDelete = async (fat: FaturaRow) => {
-    if (fat.paga) { toast.error('Fatura quitada não pode ser excluída.'); return; }
+    if (fat.status === 'quitada') { toast.error('Fatura quitada não pode ser excluída.'); return; }
     await supabase.from('itens_fatura').delete().eq('fatura_id', fat.id);
     await supabase.from('despesas').delete().eq('lote_id', fat.id);
     const { error } = await supabase.from('faturas_cartao').delete().eq('id', fat.id);
@@ -93,7 +90,7 @@ export default function Faturas() {
                       <td className="py-3 px-4">{fat.data_vencimento}</td>
                       <td className="py-3 px-4 font-semibold">{formatCurrency(fat.valor_total ?? 0)}</td>
                       <td className="py-3 px-4">
-                        {fat.paga ? (
+                        {fat.status === 'quitada' ? (
                           <Badge className="text-xs bg-success/15 text-success border-success/20 hover:bg-success/20">✅ Quitada</Badge>
                         ) : (
                           <Badge variant="outline" className="text-xs">Em Aberto</Badge>
@@ -104,7 +101,7 @@ export default function Faturas() {
                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-lg" onClick={() => navigate(`/fatura/${fat.id}`)}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {!fat.paga && (
+                          {fat.status !== 'quitada' && (
                             <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(fat)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
