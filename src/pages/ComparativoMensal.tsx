@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { BarChart3, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
@@ -11,9 +11,10 @@ import { exportToPDF } from '@/lib/export';
 
 export default function ComparativoMensal() {
   const { user } = useAuth();
+  const currentYear = new Date().getFullYear();
   const [tipoData, setTipoData] = useState('competencia');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [dataInicio, setDataInicio] = useState(`${currentYear}-01`);
+  const [dataFim, setDataFim] = useState(`${currentYear}-12`);
   const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [months, setMonths] = useState<string[]>([]);
@@ -99,7 +100,6 @@ export default function ComparativoMensal() {
     exportToPDF(rows, cols, 'Comparativo Mensal', 'comparativo-mensal');
   };
 
-  const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
   const CompSelect = ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) => {
     const parts = value ? value.split('-') : [String(currentYear), '01'];
@@ -136,8 +136,8 @@ export default function ComparativoMensal() {
                 <SelectContent><SelectItem value="competencia">Competência</SelectItem><SelectItem value="pagamento">Pagamento</SelectItem></SelectContent>
               </Select>
             </div>
-            <CompSelect value={dataInicio || `${currentYear}-01`} onChange={setDataInicio} label="Início" />
-            <CompSelect value={dataFim || `${currentYear}-12`} onChange={setDataFim} label="Fim" />
+            <CompSelect value={dataInicio} onChange={setDataInicio} label="Início" />
+            <CompSelect value={dataFim} onChange={setDataFim} label="Fim" />
             <Button onClick={generate}>Gerar</Button>
           </div>
           <div className="space-y-1">
@@ -155,33 +155,37 @@ export default function ComparativoMensal() {
       {generated && (
         <Card>
           <CardContent className="pt-4">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="border-b"><th className="py-1 px-2 text-left">Categoria</th>{months.map(m => <th key={m} className="py-1 px-2 text-right">{formatMonth(m)}</th>)}<th className="py-1 px-2 text-right">Total</th></tr></thead>
-                <tbody>
-                  {Object.keys(catMonthData).sort().map(catNome => {
-                    let total = 0;
-                    return (
-                      <tr key={catNome} className="border-b hover:bg-muted/50">
-                        <td className="py-1 px-2">{catNome}</td>
-                        {months.map(m => { const v = catMonthData[catNome][m] ?? 0; total += v; return <td key={m} className="py-1 px-2 text-right">{v ? formatCurrency(v) : '-'}</td>; })}
-                        <td className="py-1 px-2 text-right font-medium">{formatCurrency(total)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="font-semibold border-t">
-                    <td className="py-1 px-2">Total</td>
-                    {months.map(m => {
-                      const v = Object.values(catMonthData).reduce((s, d) => s + (d[m] ?? 0), 0);
-                      return <td key={m} className="py-1 px-2 text-right">{formatCurrency(v)}</td>;
+            {Object.keys(catMonthData).length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum dado encontrado para o periodo e filtros selecionados.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="border-b"><th className="py-1 px-2 text-left">Categoria</th>{months.map(m => <th key={m} className="py-1 px-2 text-right">{formatMonth(m)}</th>)}<th className="py-1 px-2 text-right">Total</th></tr></thead>
+                  <tbody>
+                    {Object.keys(catMonthData).sort().map(catNome => {
+                      let total = 0;
+                      return (
+                        <tr key={catNome} className="border-b hover:bg-muted/50">
+                          <td className="py-1 px-2">{catNome}</td>
+                          {months.map(m => { const v = catMonthData[catNome][m] ?? 0; total += v; return <td key={m} className="py-1 px-2 text-right">{v ? formatCurrency(v) : '-'}</td>; })}
+                          <td className="py-1 px-2 text-right font-medium">{formatCurrency(total)}</td>
+                        </tr>
+                      );
                     })}
-                    <td className="py-1 px-2 text-right">{formatCurrency(Object.values(catMonthData).reduce((s, d) => s + Object.values(d).reduce((a, b) => a + b, 0), 0))}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                  </tbody>
+                  <tfoot>
+                    <tr className="font-semibold border-t">
+                      <td className="py-1 px-2">Total</td>
+                      {months.map(m => {
+                        const v = Object.values(catMonthData).reduce((s, d) => s + (d[m] ?? 0), 0);
+                        return <td key={m} className="py-1 px-2 text-right">{formatCurrency(v)}</td>;
+                      })}
+                      <td className="py-1 px-2 text-right">{formatCurrency(Object.values(catMonthData).reduce((s, d) => s + Object.values(d).reduce((a, b) => a + b, 0), 0))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

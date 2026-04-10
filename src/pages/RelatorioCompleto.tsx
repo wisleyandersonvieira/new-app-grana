@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Fragment, useEffect, useState } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { BarChart3, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
@@ -15,9 +14,10 @@ type SubData = Record<string, Record<string, Record<string, number>>>; // catNom
 
 export default function RelatorioCompleto() {
   const { user } = useAuth();
+  const currentYear = new Date().getFullYear();
   const [tipoData, setTipoData] = useState('competencia');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [dataInicio, setDataInicio] = useState(`${currentYear}-01`);
+  const [dataFim, setDataFim] = useState(`${currentYear}-12`);
   const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
   const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string }[]>([]);
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
@@ -26,6 +26,8 @@ export default function RelatorioCompleto() {
   const [despesaData, setDespesaData] = useState<{ cats: CatData; subs: SubData; totals: Record<string, number> }>({ cats: {}, subs: {}, totals: {} });
   const [investData, setInvestData] = useState<{ cats: CatData; subs: SubData; totals: Record<string, number> }>({ cats: {}, subs: {}, totals: {} });
   const [generated, setGenerated] = useState(false);
+
+  const hasAnyData = [receitaData, despesaData, investData].some((section) => Object.keys(section.cats).length > 0);
 
   useEffect(() => {
     if (!user) return;
@@ -126,8 +128,8 @@ export default function RelatorioCompleto() {
           </thead>
           <tbody>
             {Object.keys(data.cats).sort().map(catNome => (
-              <>
-                <tr key={catNome} className="border-b font-medium bg-muted/30">
+              <Fragment key={catNome}>
+                <tr className="border-b font-medium bg-muted/30">
                   <td className="py-1 px-2">{catNome}</td>
                   {months.map(m => <td key={m} className="py-1 px-2 text-right">{formatCurrency(data.cats[catNome][m] ?? 0)}</td>)}
                 </tr>
@@ -137,7 +139,7 @@ export default function RelatorioCompleto() {
                     {months.map(m => <td key={m} className="py-1 px-2 text-right text-muted-foreground">{formatCurrency(data.subs[catNome][subNome][m] ?? 0)}</td>)}
                   </tr>
                 ))}
-              </>
+              </Fragment>
             ))}
           </tbody>
           <tfoot>
@@ -184,7 +186,6 @@ export default function RelatorioCompleto() {
     XLSX.writeFile(wb, 'relatorio-completo.xlsx');
   };
 
-  const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
 
   const CompSelect = ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) => {
@@ -225,8 +226,8 @@ export default function RelatorioCompleto() {
                 </SelectContent>
               </Select>
             </div>
-            <CompSelect value={dataInicio || `${currentYear}-01`} onChange={setDataInicio} label="Início" />
-            <CompSelect value={dataFim || `${currentYear}-12`} onChange={setDataFim} label="Fim" />
+            <CompSelect value={dataInicio} onChange={setDataInicio} label="Início" />
+            <CompSelect value={dataFim} onChange={setDataFim} label="Fim" />
             <Button onClick={generate}>Gerar</Button>
           </div>
           <div className="space-y-1">
@@ -245,6 +246,11 @@ export default function RelatorioCompleto() {
       {generated && (
         <Card>
           <CardContent className="pt-4">
+            {!hasAnyData && (
+              <p className="mb-4 text-sm text-muted-foreground">
+                Nenhum dado encontrado para o periodo e filtros selecionados.
+              </p>
+            )}
             <SectionTable title="Receitas" data={receitaData} />
             <SectionTable title="Despesas" data={despesaData} />
             <SectionTable title="Investimentos" data={investData} />
