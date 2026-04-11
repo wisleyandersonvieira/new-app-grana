@@ -10,6 +10,18 @@ import { formatCurrency, getCurrentCompetencia, getMonthName } from '@/lib/finan
 import { exportToExcel } from '@/lib/export';
 
 type Row = { data_pagamento: string; descricao: string; categoria: string; subcategoria: string; receita: number; despesa: number };
+type ItemFaturaReport = {
+  valor: number;
+  categoria_id: string | null;
+  subcategoria_id: string | null;
+  descricao: string | null;
+  data: string | null;
+  competencia: string | null;
+  faturas_cartao?: {
+    mes_ano: string | null;
+    data_vencimento: string | null;
+  } | null;
+};
 
 export default function RelatorioDetalhado() {
   const { user } = useAuth();
@@ -57,7 +69,10 @@ export default function RelatorioDetalhado() {
     if (filterSub !== 'all') dq = dq.eq('subcategoria_id', filterSub);
 
     // Itens fatura
-    let iq = supabase.from('itens_fatura').select('*').eq('usuario_id', user.id).gte('competencia', compInicio).lte('competencia', compFim);
+    let iq = supabase
+      .from('itens_fatura')
+      .select('valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')
+      .eq('usuario_id', user.id);
     if (filterCat !== 'all') iq = iq.eq('categoria_id', filterCat);
     if (filterSub !== 'all') iq = iq.eq('subcategoria_id', filterSub);
     const [{ data: receitas }, { data: despesas }, { data: itens }] = await Promise.all([rq, dq, iq]);
@@ -84,9 +99,14 @@ export default function RelatorioDetalhado() {
       });
     });
 
-    itens?.forEach(it => {
+    ((itens ?? []) as ItemFaturaReport[])
+      .filter((it) => {
+        const compRef = it.faturas_cartao?.mes_ano ?? it.competencia;
+        return Boolean(compRef && compRef >= compInicio && compRef <= compFim);
+      })
+      .forEach(it => {
       result.push({
-        data_pagamento: it.data ?? '',
+        data_pagamento: it.faturas_cartao?.data_vencimento ?? it.data ?? '',
         descricao: it.descricao ?? '',
         categoria: it.categoria_id ? catMap[it.categoria_id] ?? '' : '',
         subcategoria: it.subcategoria_id ? subMap[it.subcategoria_id] ?? '' : '',

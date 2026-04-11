@@ -11,6 +11,18 @@ import * as XLSX from 'xlsx';
 
 type CatData = Record<string, Record<string, number>>; // catNome -> month -> value
 type SubData = Record<string, Record<string, Record<string, number>>>; // catNome -> subNome -> month -> value
+type ItemFaturaReport = {
+  valor: number;
+  categoria_id: string | null;
+  subcategoria_id: string | null;
+  descricao: string | null;
+  data: string | null;
+  competencia: string | null;
+  faturas_cartao?: {
+    mes_ano: string | null;
+    data_vencimento: string | null;
+  } | null;
+};
 
 export default function RelatorioCompleto() {
   const { user } = useAuth();
@@ -101,15 +113,31 @@ export default function RelatorioCompleto() {
     if (selectedCats.length < categorias.length) dq = dq.in('categoria_id', selectedCats);
     
     // Itens de fatura
-    let iq = supabase.from('itens_fatura').select('*').eq('usuario_id', user.id);
-    if (tipoData === 'competencia') iq = iq.gte('competencia', dataInicio).lte('competencia', dataFim);
-    else iq = iq.gte('data', dataInicio + '-01').lte('data', dataFim + '-31');
+    let iq = supabase
+      .from('itens_fatura')
+      .select('valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')
+      .eq('usuario_id', user.id);
     if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
 
     const [{ data: allDespesas }, { data: itensFatura }] = await Promise.all([dq, iq]);
 
+    const itensFaturaFiltrados = ((itensFatura ?? []) as ItemFaturaReport[]).filter((item) => {
+      const compRef = item.faturas_cartao?.mes_ano ?? item.competencia;
+      const dataRef = item.faturas_cartao?.data_vencimento ?? item.data;
+
+      if (tipoData === 'competencia') {
+        return Boolean(compRef && compRef >= dataInicio && compRef <= dataFim);
+      }
+
+      return Boolean(dataRef && dataRef >= `${dataInicio}-01` && dataRef <= `${dataFim}-31`);
+    }).map((item) => ({
+      ...item,
+      competencia: item.faturas_cartao?.mes_ano ?? item.competencia,
+      data: item.faturas_cartao?.data_vencimento ?? item.data,
+    }));
+
     const despesasBase = allDespesas?.filter(d => d.categoria_id !== investCatId) ?? [];
-    const despesas = [...despesasBase, ...(itensFatura ?? [])];
+    const despesas = [...despesasBase, ...itensFaturaFiltrados];
     const invest = allDespesas?.filter(d => d.categoria_id === investCatId) ?? [];
 
     setReceitaData(processData(receitas ?? [], catMap, subMap, dateCol));
