@@ -59,9 +59,21 @@ export default function Dashboard() {
   }
 
   async function loadReceitasDespesas(start: string, end: string) {
-    const { data: receitas } = await supabase.from('receitas').select('valor').eq('competencia', competencia).eq('paga', true);
+    const { data: receitas } = await supabase
+      .from('receitas')
+      .select('valor')
+      .eq('paga', true)
+      .not('data_pagamento', 'is', null)
+      .gte('data_pagamento', start)
+      .lte('data_pagamento', end);
     setReceitasMes(receitas?.reduce((sum, r) => sum + r.valor, 0) || 0);
-    const { data: despesas } = await supabase.from('despesas').select('valor').eq('competencia', competencia).eq('paga', true);
+    const { data: despesas } = await supabase
+      .from('despesas')
+      .select('valor')
+      .eq('paga', true)
+      .not('data_pagamento', 'is', null)
+      .gte('data_pagamento', start)
+      .lte('data_pagamento', end);
     setDespesasMes(despesas?.reduce((sum, d) => sum + d.valor, 0) || 0);
   }
 
