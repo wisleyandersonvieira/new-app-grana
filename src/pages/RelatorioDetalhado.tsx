@@ -48,10 +48,23 @@ export default function RelatorioDetalhado() {
     let rq = supabase.from('receitas').select('*').eq('usuario_id', user.id).gte('competencia', compInicio).lte('competencia', compFim);
     if (filterCat !== 'all') rq = rq.eq('categoria_id', filterCat);
     if (filterSub !== 'all') rq = rq.eq('subcategoria_id', filterSub);
-    const { data: receitas } = await rq;
+
+    // Despesas (excl Cartão De Crédito)
+    const cartaoCatId = categorias.find(c => c.nome === 'Cartão De Crédito')?.id;
+    let dq = supabase.from('despesas').select('*').eq('usuario_id', user.id).gte('competencia', compInicio).lte('competencia', compFim);
+    if (cartaoCatId) dq = dq.neq('categoria_id', cartaoCatId);
+    if (filterCat !== 'all') dq = dq.eq('categoria_id', filterCat);
+    if (filterSub !== 'all') dq = dq.eq('subcategoria_id', filterSub);
+
+    // Itens fatura
+    let iq = supabase.from('itens_fatura').select('*').eq('usuario_id', user.id).gte('competencia', compInicio).lte('competencia', compFim);
+    if (filterCat !== 'all') iq = iq.eq('categoria_id', filterCat);
+    if (filterSub !== 'all') iq = iq.eq('subcategoria_id', filterSub);
+    const [{ data: receitas }, { data: despesas }, { data: itens }] = await Promise.all([rq, dq, iq]);
+
     receitas?.forEach(r => {
       result.push({
-        data_pagamento: r.data_pagamento ?? r.data,
+        data_pagamento: r.data_pagamento ?? r.data ?? '',
         descricao: r.descricao ?? '',
         categoria: r.categoria_id ? catMap[r.categoria_id] ?? '' : '',
         subcategoria: r.subcategoria_id ? subMap[r.subcategoria_id] ?? '' : '',
@@ -60,16 +73,9 @@ export default function RelatorioDetalhado() {
       });
     });
 
-    // Despesas (excl Cartão De Crédito)
-    const cartaoCatId = categorias.find(c => c.nome === 'Cartão De Crédito')?.id;
-    let dq = supabase.from('despesas').select('*').eq('usuario_id', user.id).gte('competencia', compInicio).lte('competencia', compFim);
-    if (cartaoCatId) dq = dq.neq('categoria_id', cartaoCatId);
-    if (filterCat !== 'all') dq = dq.eq('categoria_id', filterCat);
-    if (filterSub !== 'all') dq = dq.eq('subcategoria_id', filterSub);
-    const { data: despesas } = await dq;
     despesas?.forEach(d => {
       result.push({
-        data_pagamento: d.data_pagamento ?? d.data,
+        data_pagamento: d.data_pagamento ?? d.data ?? '',
         descricao: d.descricao ?? '',
         categoria: d.categoria_id ? catMap[d.categoria_id] ?? '' : '',
         subcategoria: d.subcategoria_id ? subMap[d.subcategoria_id] ?? '' : '',
@@ -78,11 +84,6 @@ export default function RelatorioDetalhado() {
       });
     });
 
-    // Itens fatura
-    let iq = supabase.from('itens_fatura').select('*').eq('usuario_id', user.id).gte('competencia', compInicio).lte('competencia', compFim);
-    if (filterCat !== 'all') iq = iq.eq('categoria_id', filterCat);
-    if (filterSub !== 'all') iq = iq.eq('subcategoria_id', filterSub);
-    const { data: itens } = await iq;
     itens?.forEach(it => {
       result.push({
         data_pagamento: it.data ?? '',

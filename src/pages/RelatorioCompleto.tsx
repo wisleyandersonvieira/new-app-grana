@@ -99,9 +99,17 @@ export default function RelatorioCompleto() {
     if (tipoData === 'competencia') dq = dq.gte('competencia', dataInicio).lte('competencia', dataFim);
     else dq = dq.gte('data_pagamento', dataInicio + '-01').lte('data_pagamento', dataFim + '-31');
     if (selectedCats.length < categorias.length) dq = dq.in('categoria_id', selectedCats);
-    const { data: allDespesas } = await dq;
+    
+    // Itens de fatura
+    let iq = supabase.from('itens_fatura').select('*').eq('usuario_id', user.id);
+    if (tipoData === 'competencia') iq = iq.gte('competencia', dataInicio).lte('competencia', dataFim);
+    else iq = iq.gte('data', dataInicio + '-01').lte('data', dataFim + '-31');
+    if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
 
-    const despesas = allDespesas?.filter(d => d.categoria_id !== investCatId) ?? [];
+    const [{ data: allDespesas }, { data: itensFatura }] = await Promise.all([dq, iq]);
+
+    const despesasBase = allDespesas?.filter(d => d.categoria_id !== investCatId) ?? [];
+    const despesas = [...despesasBase, ...(itensFatura ?? [])];
     const invest = allDespesas?.filter(d => d.categoria_id === investCatId) ?? [];
 
     setReceitaData(processData(receitas ?? [], catMap, subMap, dateCol));
