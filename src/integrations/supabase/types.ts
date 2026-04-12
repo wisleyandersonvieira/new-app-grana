@@ -14,42 +14,318 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_user_logs: {
+        Row: {
+          acao: string
+          admin_id: string | null
+          created_at: string
+          detalhes: Json
+          id: string
+          user_id: string
+        }
+        Insert: {
+          acao: string
+          admin_id?: string | null
+          created_at?: string
+          detalhes?: Json
+          id?: string
+          user_id: string
+        }
+        Update: {
+          acao?: string
+          admin_id?: string | null
+          created_at?: string
+          detalhes?: Json
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       assinaturas: {
         Row: {
+          cancel_at: string | null
+          cancel_at_period_end: boolean
           created_at: string | null
+          current_period_end: string | null
+          current_period_start: string | null
+          data_cancelamento: string | null
+          data_expiracao: string | null
+          frequencia: string | null
           id: string
+          moeda: string | null
+          payment_brand: string | null
+          payment_exp_month: number | null
+          payment_exp_year: number | null
+          payment_last4: string | null
+          payment_method_type: string | null
           plano: string | null
+          stripe_price_id: string | null
+          stripe_product_id: string | null
+          stripe_status: string | null
           status: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          synced_at: string | null
           trial_fim: string | null
           trial_inicio: string | null
           updated_at: string | null
           usuario_id: string
+          valor: number | null
         }
         Insert: {
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean
           created_at?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          data_cancelamento?: string | null
+          data_expiracao?: string | null
+          frequencia?: string | null
           id?: string
+          moeda?: string | null
+          payment_brand?: string | null
+          payment_exp_month?: number | null
+          payment_exp_year?: number | null
+          payment_last4?: string | null
+          payment_method_type?: string | null
           plano?: string | null
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          stripe_status?: string | null
           status?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          synced_at?: string | null
           trial_fim?: string | null
           trial_inicio?: string | null
           updated_at?: string | null
           usuario_id: string
+          valor?: number | null
         }
         Update: {
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean
           created_at?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          data_cancelamento?: string | null
+          data_expiracao?: string | null
+          frequencia?: string | null
           id?: string
+          moeda?: string | null
+          payment_brand?: string | null
+          payment_exp_month?: number | null
+          payment_exp_year?: number | null
+          payment_last4?: string | null
+          payment_method_type?: string | null
           plano?: string | null
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          stripe_status?: string | null
           status?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          synced_at?: string | null
           trial_fim?: string | null
           trial_inicio?: string | null
           updated_at?: string | null
           usuario_id?: string
+          valor?: number | null
+        }
+        Relationships: []
+      }
+      billing_invoices: {
+        Row: {
+          amount_due: number | null
+          amount_paid: number | null
+          amount_remaining: number | null
+          created_at: string
+          currency: string | null
+          due_date: string | null
+          hosted_invoice_url: string | null
+          id: string
+          invoice_pdf: string | null
+          paid_at: string | null
+          period_end: string | null
+          period_start: string | null
+          raw_data: Json
+          status: string | null
+          stripe_customer_id: string | null
+          stripe_invoice_id: string | null
+          stripe_subscription_id: string | null
+          synced_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_due?: number | null
+          amount_paid?: number | null
+          amount_remaining?: number | null
+          created_at?: string
+          currency?: string | null
+          due_date?: string | null
+          hosted_invoice_url?: string | null
+          id?: string
+          invoice_pdf?: string | null
+          paid_at?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          raw_data?: Json
+          status?: string | null
+          stripe_customer_id?: string | null
+          stripe_invoice_id?: string | null
+          stripe_subscription_id?: string | null
+          synced_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_due?: number | null
+          amount_paid?: number | null
+          amount_remaining?: number | null
+          created_at?: string
+          currency?: string | null
+          due_date?: string | null
+          hosted_invoice_url?: string | null
+          id?: string
+          invoice_pdf?: string | null
+          paid_at?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          raw_data?: Json
+          status?: string | null
+          stripe_customer_id?: string | null
+          stripe_invoice_id?: string | null
+          stripe_subscription_id?: string | null
+          synced_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      billing_payment_methods: {
+        Row: {
+          brand: string | null
+          created_at: string
+          exp_month: number | null
+          exp_year: number | null
+          id: string
+          is_default: boolean
+          last4: string | null
+          raw_data: Json
+          stripe_customer_id: string | null
+          stripe_payment_method_id: string | null
+          synced_at: string
+          type: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brand?: string | null
+          created_at?: string
+          exp_month?: number | null
+          exp_year?: number | null
+          id?: string
+          is_default?: boolean
+          last4?: string | null
+          raw_data?: Json
+          stripe_customer_id?: string | null
+          stripe_payment_method_id?: string | null
+          synced_at?: string
+          type?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brand?: string | null
+          created_at?: string
+          exp_month?: number | null
+          exp_year?: number | null
+          id?: string
+          is_default?: boolean
+          last4?: string | null
+          raw_data?: Json
+          stripe_customer_id?: string | null
+          stripe_payment_method_id?: string | null
+          synced_at?: string
+          type?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      billing_subscriptions: {
+        Row: {
+          amount: number | null
+          cancel_at: string | null
+          cancel_at_period_end: boolean
+          canceled_at: string | null
+          created_at: string
+          currency: string | null
+          current_period_end: string | null
+          current_period_start: string | null
+          id: string
+          plan_interval: string | null
+          plan_name: string | null
+          raw_data: Json
+          status: string
+          stripe_customer_id: string | null
+          stripe_price_id: string | null
+          stripe_product_id: string | null
+          stripe_subscription_id: string | null
+          synced_at: string
+          trial_end: string | null
+          trial_start: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number | null
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean
+          canceled_at?: string | null
+          created_at?: string
+          currency?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          plan_interval?: string | null
+          plan_name?: string | null
+          raw_data?: Json
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          stripe_subscription_id?: string | null
+          synced_at?: string
+          trial_end?: string | null
+          trial_start?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number | null
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean
+          canceled_at?: string | null
+          created_at?: string
+          currency?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          plan_interval?: string | null
+          plan_name?: string | null
+          raw_data?: Json
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          stripe_subscription_id?: string | null
+          synced_at?: string
+          trial_end?: string | null
+          trial_start?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -388,34 +664,52 @@ export type Database = {
       }
       profiles: {
         Row: {
+          access_blocked: boolean
           created_at: string | null
           email: string | null
+          empresa: string | null
           id: string
+          internal_notes: string | null
           is_admin: boolean | null
+          last_login_at: string | null
           nome: string | null
+          role: string
           status: string | null
+          telefone: string | null
           ultimo_acesso: string | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
+          access_blocked?: boolean
           created_at?: string | null
           email?: string | null
+          empresa?: string | null
           id?: string
+          internal_notes?: string | null
           is_admin?: boolean | null
+          last_login_at?: string | null
           nome?: string | null
+          role?: string
           status?: string | null
+          telefone?: string | null
           ultimo_acesso?: string | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
+          access_blocked?: boolean
           created_at?: string | null
           email?: string | null
+          empresa?: string | null
           id?: string
+          internal_notes?: string | null
           is_admin?: boolean | null
+          last_login_at?: string | null
           nome?: string | null
+          role?: string
           status?: string | null
+          telefone?: string | null
           ultimo_acesso?: string | null
           updated_at?: string | null
           user_id?: string

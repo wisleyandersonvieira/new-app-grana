@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AdminRoute } from "@/components/AdminRoute";
 import { AppLayout } from "@/components/AppLayout";
 import Login from "./pages/Login";
 import LandingPage from "./pages/LandingPage";
@@ -37,6 +38,8 @@ import Extratos from "./pages/Extratos";
 import Planos from "./pages/Planos";
 import PlanosSucesso from "./pages/PlanosSucesso";
 import MinhaAssinatura from "./pages/MinhaAssinatura";
+import MinhaConta from "./pages/MinhaConta";
+import AdminConsole from "./pages/AdminConsole";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -88,6 +91,11 @@ const App = () => (
                       <Route path="/planos" element={<Planos />} />
                       <Route path="/planos/sucesso" element={<PlanosSucesso />} />
                       <Route path="/minha-assinatura" element={<MinhaAssinatura />} />
+                      <Route path="/minha-conta" element={<MinhaConta />} />
+                      <Route path="/admin/dashboard" element={<AdminRoute><AdminConsole /></AdminRoute>} />
+                      <Route path="/admin/usuarios" element={<AdminRoute><AdminConsole /></AdminRoute>} />
+                      <Route path="/admin/assinaturas" element={<AdminRoute><AdminConsole /></AdminRoute>} />
+                      <Route path="/admin/logs" element={<AdminRoute><AdminConsole /></AdminRoute>} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </AppLayout>

@@ -3,16 +3,25 @@ import {
   LayoutDashboard, TrendingDown, TrendingUp, Wallet, Tags, Target,
   CreditCard, ArrowLeftRight, LogOut, DollarSign, ChevronRight,
   PlusCircle, List, BarChart3, FileText, ClipboardList, Users,
-  CalendarOff, Layers, Settings, Receipt,
+  CalendarOff, Layers, Settings, Receipt, Shield, ScrollText, UserCog,
+  Sparkles, UserCircle2,
 } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+
 import { NavLink } from '@/components/NavLink';
-import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface SubItem { title: string; url: string; icon: React.ElementType; }
-interface MenuItem { title: string; icon: React.ElementType; url?: string; children?: SubItem[]; }
+interface MenuItem { title: string; icon: React.ElementType; url?: string; children?: SubItem[]; adminOnly?: boolean; }
 
 const menuItems: MenuItem[] = [
   { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
@@ -69,18 +78,30 @@ const menuItems: MenuItem[] = [
     title: 'Configurações', icon: Settings,
     children: [
       { title: 'Minha Assinatura', url: '/minha-assinatura', icon: CreditCard },
+      { title: 'Minha Conta', url: '/minha-conta', icon: UserCircle2 },
       { title: 'Bloqueio de Datas', url: '/bloqueios', icon: CalendarOff },
-      { title: 'Usuários', url: '/usuarios', icon: Users },
+    ],
+  },
+  {
+    title: 'Administração', icon: Shield, adminOnly: true,
+    children: [
+      { title: 'Dashboard Admin', url: '/admin/dashboard', icon: Sparkles },
+      { title: 'Usuários', url: '/admin/usuarios', icon: Users },
+      { title: 'Assinaturas', url: '/admin/assinaturas', icon: UserCog },
+      { title: 'Logs', url: '/admin/logs', icon: ScrollText },
     ],
   },
 ];
 
 export function AppSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { profile, signOut } = useAuth();
+  const visibleItems = menuItems.filter((item) => !item.adminOnly || profile?.is_admin);
+
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
-    menuItems.forEach((item) => {
+    visibleItems.forEach((item) => {
       if (item.children?.some((child) => location.pathname === child.url)) {
         initial[item.title] = true;
       }
@@ -97,28 +118,21 @@ export function AppSidebar() {
 
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-[260px] flex-col bg-sidebar border-r border-sidebar-border">
-      {/* Logo area */}
       <div className="flex items-center gap-3 px-6 py-7">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sidebar-primary to-accent shadow-lg shadow-sidebar-primary/30">
           <DollarSign className="h-5 w-5 text-white" />
         </div>
         <div>
-          <span className="text-lg font-bold text-sidebar-foreground tracking-tight">
-            Grana
-          </span>
-          <p className="text-[11px] text-sidebar-foreground/40 font-medium -mt-0.5">
-            Gestão Financeira
-          </p>
+          <span className="text-lg font-bold text-sidebar-foreground tracking-tight">Grana</span>
+          <p className="text-[11px] text-sidebar-foreground/40 font-medium -mt-0.5">Gestão Financeira</p>
         </div>
       </div>
 
-      {/* Divider */}
       <div className="mx-5 h-px bg-sidebar-border/60" />
 
-      {/* Menu */}
       <ScrollArea className="flex-1 px-3 pt-4">
         <nav className="flex flex-col gap-0.5">
-          {menuItems.map((item) => {
+          {visibleItems.map((item) => {
             if (item.url) {
               const active = location.pathname === item.url;
               return (
@@ -207,24 +221,50 @@ export function AppSidebar() {
         </nav>
       </ScrollArea>
 
-      {/* Footer */}
       <div className="mx-5 h-px bg-sidebar-border/60" />
       <div className="px-4 py-4">
         {profile && (
-          <div className="mb-3 flex items-center gap-3 px-1">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sidebar-primary to-accent text-[13px] font-bold text-white uppercase shadow-sm">
-              {profile.nome?.charAt(0) || 'U'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-semibold text-sidebar-foreground">
-                {profile.nome}
-              </p>
-              <p className="text-[11px] text-sidebar-foreground/40 font-medium">
-                {profile.is_admin ? 'Administrador' : 'Usuário'}
-              </p>
-            </div>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="mb-3 flex w-full items-center gap-3 rounded-xl border border-sidebar-border/60 bg-sidebar-accent/60 px-3 py-3 text-left transition hover:bg-sidebar-accent">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sidebar-primary to-accent text-[13px] font-bold text-white uppercase shadow-sm">
+                  {profile.nome?.charAt(0) || 'U'}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-semibold text-sidebar-foreground">
+                    {profile.nome || 'Usuário'}
+                  </p>
+                  <p className="truncate text-[11px] text-sidebar-foreground/45 font-medium">
+                    {profile.is_admin ? 'Administrador' : 'Minha conta'}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-sidebar-foreground/35" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" className="w-60">
+              <DropdownMenuItem onClick={() => navigate('/minha-conta')}>
+                <UserCircle2 className="mr-2 h-4 w-4" />
+                Minha Conta
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/minha-assinatura')}>
+                <CreditCard className="mr-2 h-4 w-4" />
+                Assinatura
+              </DropdownMenuItem>
+              {profile.is_admin && (
+                <DropdownMenuItem onClick={() => navigate('/admin/dashboard')}>
+                  <Shield className="mr-2 h-4 w-4" />
+                  Administração
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive">
+                <LogOut className="mr-2 h-4 w-4" />
+                Sair
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
+
         <button
           onClick={signOut}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-150 text-sidebar-foreground/50 hover:bg-destructive/10 hover:text-destructive"

@@ -14,12 +14,12 @@ Deno.serve(async (req) => {
       .single();
 
     if (!subscription?.stripe_subscription_id) {
-      throw new Error("Nenhuma assinatura ativa encontrada");
+      return json({ error: "Nenhuma assinatura Stripe encontrada para reativar." }, 400);
     }
 
     const stripe = createStripeClient();
-    const updated = await stripe.subscriptions.update(subscription.stripe_subscription_id, {
-      cancel_at_period_end: true,
+    await stripe.subscriptions.update(subscription.stripe_subscription_id, {
+      cancel_at_period_end: false,
     });
 
     await syncStripeDataForUser({
@@ -31,10 +31,7 @@ Deno.serve(async (req) => {
       stripeSubscriptionId: subscription.stripe_subscription_id,
     });
 
-    return json({
-      success: true,
-      access_until: new Date(updated.current_period_end * 1000).toISOString(),
-    });
+    return json({ success: true });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);
   }

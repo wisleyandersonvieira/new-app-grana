@@ -7,9 +7,15 @@ interface Profile {
   user_id: string;
   nome: string | null;
   email: string | null;
+  telefone?: string | null;
+  empresa?: string | null;
   is_admin: boolean | null;
+  role?: string | null;
   status: string | null;
+  access_blocked?: boolean | null;
+  internal_notes?: string | null;
   ultimo_acesso: string | null;
+  last_login_at?: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -81,9 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .single();
         if (mounted) setProfile(data);
 
+        const timestamp = new Date().toISOString();
         supabase
           .from('profiles')
-          .update({ ultimo_acesso: new Date().toISOString() })
+          .update({ ultimo_acesso: timestamp, last_login_at: timestamp })
           .eq('user_id', userId)
           .then(() => {});
       } catch {

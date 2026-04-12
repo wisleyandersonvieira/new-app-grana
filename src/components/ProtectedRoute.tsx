@@ -36,7 +36,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Routes exempt from subscription verification
-  const exemptRoutes = ['/planos', '/planos/sucesso', '/minha-assinatura'];
+  const exemptRoutes = ['/planos', '/planos/sucesso', '/minha-assinatura', '/minha-conta', '/admin/dashboard', '/admin/usuarios', '/admin/assinaturas', '/admin/logs'];
   const isExempt = exemptRoutes.some(r => location.pathname === r || location.pathname.startsWith('/planos'));
 
   if (subscription && !isExempt) {

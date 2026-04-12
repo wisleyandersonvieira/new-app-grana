@@ -1,194 +1,157 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
-import { createClient } from "npm:@supabase/supabase-js@2.57.2";
+import { createServiceClient, createStripeClient, json, syncStripeDataForUser, writeAdminLog } from "../_shared/billing.ts";
 
-const logStep = (step: string, details?: any) => {
-  const detailsStr = details ? ` - ${JSON.stringify(details)}` : "";
-  console.log(`[STRIPE-WEBHOOK] ${step}${detailsStr}`);
+const logStep = (step: string, details?: unknown) => {
+  console.log(`[STRIPE-WEBHOOK] ${step}${details ? ` - ${JSON.stringify(details)}` : ""}`);
 };
 
-serve(async (req) => {
-  if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
-  }
+const findUserIdByCustomer = async (supabase: ReturnType<typeof createServiceClient>, customerId?: string | null) => {
+  if (!customerId) return null;
+
+  const { data: assinatura } = await supabase
+    .from("assinaturas")
+    .select("usuario_id")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+
+  if (assinatura?.usuario_id) return assinatura.usuario_id;
+
+  const { data: paymentMethod } = await supabase
+    .from("billing_payment_methods")
+    .select("user_id")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+
+  return paymentMethod?.user_id ?? null;
+};
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
   const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
   const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-  if (!stripeKey || !webhookSecret) {
-    console.error("Missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET");
-    return new Response("Server configuration error", { status: 500 });
-  }
+  if (!stripeKey || !webhookSecret) return new Response("Server configuration error", { status: 500 });
 
-  const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
-
+  const stripe = createStripeClient();
   const body = await req.text();
   const signature = req.headers.get("stripe-signature");
-  if (!signature) {
-    return new Response("No signature", { status: 400 });
-  }
+  if (!signature) return new Response("No signature", { status: 400 });
 
   let event: Stripe.Event;
   try {
     event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logStep("Signature verification failed", { error: msg });
     return new Response(`Webhook Error: ${msg}`, { status: 400 });
   }
 
+  const supabase = createServiceClient();
   logStep("Event received", { type: event.type, id: event.id });
-
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-    { auth: { persistSession: false } }
-  );
 
   try {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (session.mode !== "subscription" || !session.subscription) break;
+        const customerId = typeof session.customer === "string" ? session.customer : null;
+        const email = session.customer_details?.email ?? null;
 
-        const sub = await stripe.subscriptions.retrieve(session.subscription as string);
-        const customerId = session.customer as string;
-        const customer = await stripe.customers.retrieve(customerId);
-        const email = (customer as Stripe.Customer).email;
+        const authUsers = await supabase.auth.admin.listUsers();
+        const user = authUsers.data.users.find((entry) => entry.email === email);
 
-        if (!email) {
-          logStep("No email found for customer", { customerId });
-          break;
+        if (user) {
+          await syncStripeDataForUser({
+            supabase,
+            stripe,
+            userId: user.id,
+            email: user.email,
+            stripeCustomerId: customerId,
+            stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : null,
+          });
+          await writeAdminLog(supabase, {
+            user_id: user.id,
+            acao: "stripe_checkout_completed",
+            detalhes: { event_id: event.id, customer_id: customerId, session_id: session.id },
+          });
         }
-
-        // Find user by email
-        const { data: users } = await supabase.auth.admin.listUsers();
-        const user = users?.users?.find((u) => u.email === email);
-        if (!user) {
-          logStep("No user found for email", { email });
-          break;
-        }
-
-        const priceId = sub.items.data[0]?.price?.id;
-        const plano = priceId === "price_1T91XWGbo9PdwdD38zBjKpDx" ? "mensal" : "anual";
-        const periodEnd = new Date(sub.current_period_end * 1000).toISOString();
-
-        await supabase
-          .from("assinaturas")
-          .update({
-            status: "active",
-            plano,
-            stripe_customer_id: customerId,
-            stripe_subscription_id: sub.id,
-            stripe_price_id: priceId,
-            data_expiracao: periodEnd,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("usuario_id", user.id);
-
-        logStep("checkout.session.completed processed", { userId: user.id, plano });
         break;
       }
 
-      case "invoice.payment_succeeded": {
-        const invoice = event.data.object as Stripe.Invoice;
-        const subId = invoice.subscription as string;
-        if (!subId) break;
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const userId = await findUserIdByCustomer(supabase, typeof subscription.customer === "string" ? subscription.customer : null);
+        if (!userId) break;
 
-        const sub = await stripe.subscriptions.retrieve(subId);
-        const periodEnd = new Date(sub.current_period_end * 1000).toISOString();
+        const authUser = await supabase.auth.admin.getUserById(userId);
+        await syncStripeDataForUser({
+          supabase,
+          stripe,
+          userId,
+          email: authUser.data.user?.email,
+          stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : null,
+          stripeSubscriptionId: subscription.id,
+        });
 
-        await supabase
-          .from("assinaturas")
-          .update({
-            status: "active",
-            data_expiracao: periodEnd,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("stripe_subscription_id", subId);
-
-        logStep("invoice.payment_succeeded processed", { subId });
+        await writeAdminLog(supabase, {
+          user_id: userId,
+          acao: `stripe_${event.type.replaceAll(".", "_")}`,
+          detalhes: { event_id: event.id, subscription_id: subscription.id, status: subscription.status },
+        });
         break;
       }
 
+      case "invoice.paid":
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
-        const subId = invoice.subscription as string;
-        if (!subId) break;
+        const customerId = typeof invoice.customer === "string" ? invoice.customer : null;
+        const userId = await findUserIdByCustomer(supabase, customerId);
+        if (!userId) break;
 
-        await supabase
-          .from("assinaturas")
-          .update({
-            status: "past_due",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("stripe_subscription_id", subId);
+        const authUser = await supabase.auth.admin.getUserById(userId);
+        await syncStripeDataForUser({
+          supabase,
+          stripe,
+          userId,
+          email: authUser.data.user?.email,
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: typeof invoice.subscription === "string" ? invoice.subscription : null,
+        });
 
-        logStep("invoice.payment_failed processed", { subId });
+        await writeAdminLog(supabase, {
+          user_id: userId,
+          acao: event.type === "invoice.paid" ? "stripe_invoice_paid" : "stripe_invoice_payment_failed",
+          detalhes: {
+            event_id: event.id,
+            invoice_id: invoice.id,
+            amount_paid: invoice.amount_paid / 100,
+            amount_due: invoice.amount_due / 100,
+            status: invoice.status,
+          },
+        });
         break;
       }
 
-      case "customer.subscription.updated": {
-        const sub = event.data.object as Stripe.Subscription;
-        const periodEnd = new Date(sub.current_period_end * 1000).toISOString();
+      case "payment_method.attached": {
+        const paymentMethod = event.data.object as Stripe.PaymentMethod;
+        const customerId = typeof paymentMethod.customer === "string" ? paymentMethod.customer : null;
+        const userId = await findUserIdByCustomer(supabase, customerId);
+        if (!userId) break;
 
-        let status: string;
-        switch (sub.status) {
-          case "active":
-            status = "active";
-            break;
-          case "past_due":
-            status = "past_due";
-            break;
-          case "canceled":
-            status = "canceled";
-            break;
-          default:
-            status = sub.status;
-        }
+        const authUser = await supabase.auth.admin.getUserById(userId);
+        await syncStripeDataForUser({
+          supabase,
+          stripe,
+          userId,
+          email: authUser.data.user?.email,
+          stripeCustomerId: customerId,
+        });
 
-        const updateData: Record<string, any> = {
-          status,
-          data_expiracao: periodEnd,
-          updated_at: new Date().toISOString(),
-        };
-
-        if (status === "canceled") {
-          updateData.data_cancelamento = new Date().toISOString();
-        }
-
-        // Update price/plano if changed
-        const priceId = sub.items.data[0]?.price?.id;
-        if (priceId) {
-          updateData.stripe_price_id = priceId;
-          updateData.plano = priceId === "price_1T91XWGbo9PdwdD38zBjKpDx" ? "mensal" : "anual";
-        }
-
-        await supabase
-          .from("assinaturas")
-          .update(updateData)
-          .eq("stripe_subscription_id", sub.id);
-
-        logStep("customer.subscription.updated processed", { subId: sub.id, status });
-        break;
-      }
-
-      case "customer.subscription.deleted": {
-        const sub = event.data.object as Stripe.Subscription;
-        const periodEnd = new Date(sub.current_period_end * 1000).toISOString();
-        const now = new Date();
-        const isStillValid = new Date(periodEnd) > now;
-
-        await supabase
-          .from("assinaturas")
-          .update({
-            status: isStillValid ? "canceled" : "expired",
-            data_expiracao: periodEnd,
-            data_cancelamento: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("stripe_subscription_id", sub.id);
-
-        logStep("customer.subscription.deleted processed", { subId: sub.id });
+        await writeAdminLog(supabase, {
+          user_id: userId,
+          acao: "stripe_payment_method_attached",
+          detalhes: { event_id: event.id, payment_method_id: paymentMethod.id, brand: paymentMethod.card?.brand ?? null },
+        });
         break;
       }
 
@@ -197,13 +160,9 @@ serve(async (req) => {
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    logStep("Error processing webhook", { error: msg, type: event.type });
-    // Still return 200 to avoid Stripe retries for processing errors
-    return new Response(JSON.stringify({ received: true, error: msg }), { status: 200 });
+    logStep("Processing error", { error: msg, type: event.type });
+    return json({ received: true, error: msg });
   }
 
-  return new Response(JSON.stringify({ received: true }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  return json({ received: true });
 });
