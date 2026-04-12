@@ -10,8 +10,8 @@ import { toast } from 'sonner';
 
 const PLANS: Record<string, { price_id: string; product_id: string; name: string; price: string; period: string; description: string; popular?: boolean; features: string[] }> = {
   mensal: {
-    price_id: 'price_1T91XWGbo9PdwdD38zBjKpDx',
-    product_id: 'prod_U7G319NX0PxwvN',
+    price_id: 'price_1TLP0bGrbv5UzR86IczFvXwg',
+    product_id: 'prod_UK36RxxbvA8FRR',
     name: 'Mensal',
     price: 'R$ 29',
     period: '/mês',
@@ -27,8 +27,8 @@ const PLANS: Record<string, { price_id: string; product_id: string; name: string
     ],
   },
   anual: {
-    price_id: 'price_1T91XqGbo9PdwdD30RWk5kSZ',
-    product_id: 'prod_U7G3lQTOwn6Ivz',
+    price_id: 'price_1TLP1AGrbv5UzR86KwUWNdGZ',
+    product_id: 'prod_UK37MMa0nFw79q',
     name: 'Anual',
     price: 'R$ 290',
     period: '/ano',
