@@ -481,7 +481,7 @@ export default function MinhaConta() {
                       ) : (
                         <CheckCircle2 className="h-4 w-4 text-green-600" />
                       )}
-                      {log.acao.replaceAll('_', ' ')}
+                      {log.acao.split('_').join(' ')}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(log.created_at)}</p>
                   </div>

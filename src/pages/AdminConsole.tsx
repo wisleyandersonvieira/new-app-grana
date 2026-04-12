@@ -265,7 +265,7 @@ export default function AdminConsole() {
             <CardContent className="p-5">
               <p className="text-sm text-muted-foreground">{card.label}</p>
               <p className="mt-3 text-3xl font-bold tracking-tight">
-                {card.currency
+              {'currency' in card && card.currency
                   ? formatCurrency(metrics?.[card.key] as number | null)
                   : metrics?.[card.key]?.toLocaleString('pt-BR') || '0'}
               </p>
@@ -356,7 +356,7 @@ export default function AdminConsole() {
               <div key={log.id} className="rounded-xl border p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold">{log.acao.replaceAll('_', ' ')}</p>
+                    <p className="text-sm font-semibold">{log.acao.split('_').join(' ')}</p>
                     <p className="text-xs text-muted-foreground">{formatDateTime(log.created_at)}</p>
                   </div>
                   <Badge className="bg-slate-100 text-slate-700 border-slate-200">Detalhe aberto</Badge>
@@ -518,7 +518,7 @@ export default function AdminConsole() {
                       selectedUser.logs.map((log) => (
                         <div key={log.id} className="rounded-xl border p-4">
                           <div className="flex items-center justify-between gap-4">
-                            <p className="text-sm font-semibold">{log.acao.replaceAll('_', ' ')}</p>
+                            <p className="text-sm font-semibold">{log.acao.split('_').join(' ')}</p>
                             <p className="text-xs text-muted-foreground">{formatDateTime(log.created_at)}</p>
                           </div>
                         </div>
