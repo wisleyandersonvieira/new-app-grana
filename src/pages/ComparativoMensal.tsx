@@ -9,6 +9,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
 import { exportToPDF } from '@/lib/export';
 
+type ItemFaturaReport = {
+  valor: number;
+  categoria_id: string | null;
+  data: string | null;
+  competencia: string | null;
+  faturas_cartao?: {
+    mes_ano: string | null;
+    data_vencimento: string | null;
+  } | null;
+};
+
 export default function ComparativoMensal() {
   const { user } = useAuth();
   const currentYear = new Date().getFullYear();
@@ -67,15 +78,30 @@ export default function ComparativoMensal() {
     });
 
     // Itens fatura
-    let iq = supabase.from('itens_fatura').select('categoria_id, valor, competencia, data').eq('usuario_id', user.id);
-    if (tipoData === 'competencia') iq = iq.gte('competencia', dataInicio).lte('competencia', dataFim);
-    else iq = iq.gte('data', dataInicio + '-01').lte('data', dataFim + '-31');
+    let iq = supabase
+      .from('itens_fatura')
+      .select('categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
+      .eq('usuario_id', user.id);
     if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
     const { data: itens } = await iq;
 
-    itens?.forEach(it => {
+    ((itens ?? []) as ItemFaturaReport[])
+      .filter((it) => {
+        const compRef = it.faturas_cartao?.mes_ano ?? it.competencia;
+        const dataRef = it.faturas_cartao?.data_vencimento ?? it.data;
+
+        if (tipoData === 'competencia') {
+          return Boolean(compRef && compRef >= dataInicio && compRef <= dataFim);
+        }
+
+        return Boolean(dataRef && dataRef >= `${dataInicio}-01` && dataRef <= `${dataFim}-31`);
+      })
+      .forEach(it => {
       const catNome = it.categoria_id ? catMap[it.categoria_id] ?? 'Sem' : 'Sem';
-      const month = tipoData === 'competencia' ? it.competencia : it.data?.substring(0, 7);
+      const month =
+        tipoData === 'competencia'
+          ? (it.faturas_cartao?.mes_ano ?? it.competencia)
+          : (it.faturas_cartao?.data_vencimento ?? it.data)?.substring(0, 7);
       if (!month) return;
       if (!data[catNome]) data[catNome] = {};
       data[catNome][month] = (data[catNome][month] ?? 0) + it.valor;
