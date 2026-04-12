@@ -48,8 +48,6 @@ export type Database = {
           created_at: string | null
           current_period_end: string | null
           current_period_start: string | null
-          data_cancelamento: string | null
-          data_expiracao: string | null
           frequencia: string | null
           id: string
           moeda: string | null
@@ -59,11 +57,11 @@ export type Database = {
           payment_last4: string | null
           payment_method_type: string | null
           plano: string | null
+          status: string
+          stripe_customer_id: string | null
           stripe_price_id: string | null
           stripe_product_id: string | null
           stripe_status: string | null
-          status: string
-          stripe_customer_id: string | null
           stripe_subscription_id: string | null
           synced_at: string | null
           trial_fim: string | null
@@ -78,8 +76,6 @@ export type Database = {
           created_at?: string | null
           current_period_end?: string | null
           current_period_start?: string | null
-          data_cancelamento?: string | null
-          data_expiracao?: string | null
           frequencia?: string | null
           id?: string
           moeda?: string | null
@@ -89,11 +85,11 @@ export type Database = {
           payment_last4?: string | null
           payment_method_type?: string | null
           plano?: string | null
+          status?: string
+          stripe_customer_id?: string | null
           stripe_price_id?: string | null
           stripe_product_id?: string | null
           stripe_status?: string | null
-          status?: string
-          stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           synced_at?: string | null
           trial_fim?: string | null
@@ -108,8 +104,6 @@ export type Database = {
           created_at?: string | null
           current_period_end?: string | null
           current_period_start?: string | null
-          data_cancelamento?: string | null
-          data_expiracao?: string | null
           frequencia?: string | null
           id?: string
           moeda?: string | null
@@ -119,11 +113,11 @@ export type Database = {
           payment_last4?: string | null
           payment_method_type?: string | null
           plano?: string | null
+          status?: string
+          stripe_customer_id?: string | null
           stripe_price_id?: string | null
           stripe_product_id?: string | null
           stripe_status?: string | null
-          status?: string
-          stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           synced_at?: string | null
           trial_fim?: string | null
@@ -892,7 +886,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
