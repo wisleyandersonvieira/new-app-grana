@@ -104,7 +104,7 @@ export async function syncStripeDataForUser({
   if (stripeSubscriptionId) {
     try {
       subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
-        expand: ["default_payment_method", "items.data.price.product"],
+        expand: ["default_payment_method", "items.data.price"],
       });
     } catch {
       subscription = null;
@@ -116,7 +116,7 @@ export async function syncStripeDataForUser({
       customer: customerId,
       status: "all",
       limit: 5,
-      expand: ["data.default_payment_method", "data.items.data.price.product"],
+      expand: ["data.default_payment_method", "data.items.data.price"],
     });
     subscription = subscriptions.data
       .sort((a, b) => b.created - a.created)[0] ?? null;
