@@ -1,30 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,30 +12,55 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-  TrendingDown,
-  Plus,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  FileSpreadsheet,
-  FileText,
-  CalendarIcon,
-  Filter,
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { formatCurrency } from '@/lib/financial';
 import { exportToExcel, exportToPDF } from '@/lib/export';
+import { formatCurrency } from '@/lib/financial';
+import { formatCompactCompetencia, formatDisplayDate, formatInstallmentDisplay } from '@/lib/listing-format';
 import { PayModal } from '@/components/PayModal';
 import { ImportTransactionsDialog } from '@/components/ImportTransactionsDialog';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  CalendarIcon,
+  CheckCircle,
+  FileSpreadsheet,
+  FileText,
+  FilterX,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  TrendingDown,
+  XCircle,
+} from 'lucide-react';
 
 interface DespesaRow {
   id: string;
@@ -76,11 +78,66 @@ interface DespesaRow {
   paga: boolean | null;
   conta_id: string | null;
   categoria_id: string | null;
+  subcategoria_id: string | null;
   is_cartao: boolean;
 }
 
-type SortField = keyof DespesaRow;
+type SortField = 'data' | 'categoria_nome' | 'subcategoria_nome' | 'descricao' | 'parcela' | 'competencia' | 'valor' | 'data_pagamento';
 type SortDir = 'asc' | 'desc';
+
+type FilterState = {
+  categoria: string;
+  subcategoria: string;
+  situacao: string;
+  descricao: string;
+  compInicioMes: string;
+  compInicioAno: string;
+  compFimMes: string;
+  compFimAno: string;
+  vencimentoInicio?: Date;
+  vencimentoFim?: Date;
+  pagamentoInicio?: Date;
+  pagamentoFim?: Date;
+};
+
+const defaultFilters: FilterState = {
+  categoria: 'all',
+  subcategoria: 'all',
+  situacao: 'all',
+  descricao: '',
+  compInicioMes: '',
+  compInicioAno: '',
+  compFimMes: '',
+  compFimAno: '',
+  vencimentoInicio: undefined,
+  vencimentoFim: undefined,
+  pagamentoInicio: undefined,
+  pagamentoFim: undefined,
+};
+
+function DateFilter({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: Date | undefined;
+  onChange: (value: Date | undefined) => void;
+  placeholder: string;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className={cn('h-10 w-full justify-start text-left font-normal', !value && 'text-muted-foreground')}>
+          <CalendarIcon className="mr-2 h-4 w-4" />
+          {value ? format(value, 'dd/MM/yyyy') : placeholder}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar mode="single" selected={value} onSelect={onChange} locale={ptBR} initialFocus className="p-3 pointer-events-auto" />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function Despesas() {
   const navigate = useNavigate();
@@ -89,31 +146,14 @@ export default function Despesas() {
   const [despesas, setDespesas] = useState<DespesaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  // Filters
-  const [fCategoria, setFCategoria] = useState('all');
-  const [fConta, setFConta] = useState('all');
-  const [fCompMes, setFCompMes] = useState('all');
-  const [fCompAno, setFCompAno] = useState('all');
-  const [fSituacao, setFSituacao] = useState('all');
-  const [fDescricao, setFDescricao] = useState('');
-  const [fCadastroInicio, setFCadastroInicio] = useState<Date | undefined>();
-  const [fCadastroFim, setFCadastroFim] = useState<Date | undefined>();
-  const [fPagtoInicio, setFPagtoInicio] = useState<Date | undefined>();
-  const [fPagtoFim, setFPagtoFim] = useState<Date | undefined>();
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Sort
+  const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilters);
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
   const [sortField, setSortField] = useState<SortField>('data');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-
-  // Reference data
   const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
   const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string }[]>([]);
   const [contas, setContas] = useState<{ id: string; nome: string }[]>([]);
   const [bloqueios, setBloqueios] = useState<{ tipo: string; mes_ano: string }[]>([]);
-
-  // Modals
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payIds, setPayIds] = useState<string[]>([]);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -133,14 +173,11 @@ export default function Despesas() {
       supabase.from('contas').select('id, nome, tipo').eq('bloqueada', false).order('nome'),
       supabase.from('bloqueios').select('tipo, mes_ano'),
     ]);
+
     setCategorias(catRes.data || []);
     setSubcategorias(subRes.data || []);
-    setContas((contRes.data || []).map((c: any) => ({ id: c.id, nome: c.nome })));
+    setContas((contRes.data || []).map((conta: any) => ({ id: conta.id, nome: conta.nome })));
     setBloqueios(bloqRes.data || []);
-
-    // Build a map of conta types
-    const contaTipoMap: Record<string, string> = {};
-    (contRes.data || []).forEach((c: any) => { contaTipoMap[c.id] = c.tipo; });
 
     const { data } = await supabase
       .from('despesas')
@@ -148,88 +185,91 @@ export default function Despesas() {
       .order('data', { ascending: false });
 
     if (data) {
-      // Calculate total_parcelas per lote_id
       const loteCount: Record<string, number> = {};
-      data.forEach((d: any) => {
-        if (d.lote_id) {
-          loteCount[d.lote_id] = (loteCount[d.lote_id] || 0) + 1;
-        }
+      data.forEach((despesa: any) => {
+        if (despesa.lote_id) loteCount[despesa.lote_id] = (loteCount[despesa.lote_id] || 0) + 1;
       });
 
-      const rows: DespesaRow[] = data.map((d: any) => ({
-        id: d.id,
-        data: d.data,
-        categoria_nome: d.categorias?.nome || '—',
-        subcategoria_nome: d.subcategorias?.nome || '—',
-        descricao: d.descricao,
-        parcela: d.parcela,
-        total_parcelas: d.lote_id ? loteCount[d.lote_id] : d.parcela ? 1 : null,
-        conta_nome: d.contas?.nome || '—',
-        competencia: d.competencia,
-        valor: d.valor,
-        data_pagamento: d.data_pagamento,
-        created_at: d.created_at,
-        paga: d.paga,
-        conta_id: d.conta_id,
-        categoria_id: d.categoria_id,
-        is_cartao: d.contas?.tipo === 'cartao',
-      }));
-      setDespesas(rows);
+      setDespesas(data.map((despesa: any) => ({
+        id: despesa.id,
+        data: despesa.data,
+        categoria_nome: despesa.categorias?.nome || '—',
+        subcategoria_nome: despesa.subcategorias?.nome || '—',
+        descricao: despesa.descricao,
+        parcela: despesa.parcela,
+        total_parcelas: despesa.lote_id ? loteCount[despesa.lote_id] : despesa.parcela ? 1 : null,
+        conta_nome: despesa.contas?.nome || '—',
+        competencia: despesa.competencia,
+        valor: despesa.valor,
+        data_pagamento: despesa.data_pagamento,
+        created_at: despesa.created_at,
+        paga: despesa.paga,
+        conta_id: despesa.conta_id,
+        categoria_id: despesa.categoria_id,
+        subcategoria_id: despesa.subcategoria_id,
+        is_cartao: despesa.contas?.tipo === 'cartao',
+      })));
     }
+
     setLoading(false);
   }
 
-  // Check blocking
-  function isBlocked(competencia: string | null, dataPagamento: string | null): boolean {
-    if (!competencia && !dataPagamento) return false;
-    return bloqueios.some((b) => {
-      if (b.tipo === 'competencia' && competencia && competencia === b.mes_ano) return true;
-      if (b.tipo === 'pagamento' && dataPagamento) {
-        const pgtoComp = dataPagamento.substring(0, 7);
-        if (pgtoComp === b.mes_ano) return true;
-      }
+  function isBlocked(competencia: string | null, dataPagamento: string | null) {
+    return bloqueios.some((bloqueio) => {
+      if (bloqueio.tipo === 'competencia' && competencia === bloqueio.mes_ano) return true;
+      if (bloqueio.tipo === 'pagamento' && dataPagamento?.slice(0, 7) === bloqueio.mes_ano) return true;
       return false;
     });
   }
 
-  // Filtered + sorted data
+  function updateDraft<K extends keyof FilterState>(field: K, value: FilterState[K]) {
+    setDraftFilters((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'categoria') next.subcategoria = 'all';
+      return next;
+    });
+  }
+
+  const filteredSubcategorias = useMemo(() => {
+    if (draftFilters.categoria === 'all') return subcategorias;
+    return subcategorias.filter((subcategoria) => subcategoria.categoria_id === draftFilters.categoria);
+  }, [draftFilters.categoria, subcategorias]);
+
   const filtered = useMemo(() => {
     let result = [...despesas];
+    const filters = appliedFilters;
 
-    if (fCategoria !== 'all') {
-      result = result.filter((d) => d.categoria_id === fCategoria);
-    }
-    if (fConta !== 'all') {
-      result = result.filter((d) => d.conta_id === fConta);
-    }
-    if (fCompMes && fCompMes !== 'all' && fCompAno && fCompAno !== 'all') {
-      const comp = `${fCompAno}-${fCompMes.padStart(2, '0')}`;
-      result = result.filter((d) => d.competencia === comp);
-    }
-    if (fSituacao === 'pagas') result = result.filter((d) => d.paga);
-    if (fSituacao === 'nao_pagas') result = result.filter((d) => !d.paga);
-    if (fDescricao) {
-      const term = fDescricao.toLowerCase();
-      result = result.filter((d) => d.descricao?.toLowerCase().includes(term));
-    }
-    if (fCadastroInicio) {
-      const s = format(fCadastroInicio, 'yyyy-MM-dd');
-      result = result.filter((d) => (d.created_at || '') >= s);
-    }
-    if (fCadastroFim) {
-      const e = format(fCadastroFim, 'yyyy-MM-dd');
-      result = result.filter((d) => (d.created_at || '').substring(0, 10) <= e);
-    }
-    if (fPagtoInicio) {
-      const s = format(fPagtoInicio, 'yyyy-MM-dd');
-      result = result.filter((d) => d.data_pagamento && d.data_pagamento >= s);
-    }
-    if (fPagtoFim) {
-      const e = format(fPagtoFim, 'yyyy-MM-dd');
-      result = result.filter((d) => d.data_pagamento && d.data_pagamento <= e);
+    if (filters.categoria !== 'all') result = result.filter((item) => item.categoria_id === filters.categoria);
+    if (filters.subcategoria !== 'all') result = result.filter((item) => item.subcategoria_id === filters.subcategoria);
+    if (filters.situacao === 'pagas') result = result.filter((item) => item.paga);
+    if (filters.situacao === 'nao_pagas') result = result.filter((item) => !item.paga);
+    if (filters.descricao.trim()) {
+      const term = filters.descricao.toLowerCase().trim();
+      result = result.filter((item) => item.descricao?.toLowerCase().includes(term));
     }
 
-    // Sort
+    const compInicio = filters.compInicioAno && filters.compInicioMes ? `${filters.compInicioAno}-${filters.compInicioMes.padStart(2, '0')}` : null;
+    const compFim = filters.compFimAno && filters.compFimMes ? `${filters.compFimAno}-${filters.compFimMes.padStart(2, '0')}` : null;
+    if (compInicio) result = result.filter((item) => item.competencia && item.competencia >= compInicio);
+    if (compFim) result = result.filter((item) => item.competencia && item.competencia <= compFim);
+
+    if (filters.vencimentoInicio) {
+      const start = format(filters.vencimentoInicio, 'yyyy-MM-dd');
+      result = result.filter((item) => item.data >= start);
+    }
+    if (filters.vencimentoFim) {
+      const end = format(filters.vencimentoFim, 'yyyy-MM-dd');
+      result = result.filter((item) => item.data <= end);
+    }
+    if (filters.pagamentoInicio) {
+      const start = format(filters.pagamentoInicio, 'yyyy-MM-dd');
+      result = result.filter((item) => item.data_pagamento && item.data_pagamento >= start);
+    }
+    if (filters.pagamentoFim) {
+      const end = format(filters.pagamentoFim, 'yyyy-MM-dd');
+      result = result.filter((item) => item.data_pagamento && item.data_pagamento <= end);
+    }
+
     result.sort((a, b) => {
       const aVal = a[sortField] ?? '';
       const bVal = b[sortField] ?? '';
@@ -239,52 +279,61 @@ export default function Despesas() {
     });
 
     return result;
-  }, [despesas, fCategoria, fConta, fCompMes, fCompAno, fSituacao, fDescricao, fCadastroInicio, fCadastroFim, fPagtoInicio, fPagtoFim, sortField, sortDir]);
+  }, [appliedFilters, despesas, sortDir, sortField]);
 
-  const total = filtered.reduce((s, d) => s + d.valor, 0);
+  const total = filtered.reduce((sum, item) => sum + item.valor, 0);
+  const totalPagas = filtered.filter((item) => item.paga).reduce((sum, item) => sum + item.valor, 0);
+  const totalAbertas = total - totalPagas;
+  const allSelected = filtered.length > 0 && filtered.every((item) => selected.has(item.id));
 
-  // Selection helpers
-  const allSelected = filtered.length > 0 && filtered.every((d) => selected.has(d.id));
   function toggleAll() {
-    if (allSelected) setSelected(new Set());
-    else setSelected(new Set(filtered.map((d) => d.id)));
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map((item) => item.id)));
+    }
   }
+
   function toggleOne(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
-  // Column sort
   function handleSort(field: SortField) {
-    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortField(field); setSortDir('asc'); }
-  }
-  function SortIcon({ field }: { field: SortField }) {
-    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
-    return sortDir === 'asc' ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
+    if (sortField === field) setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortField(field);
+      setSortDir('asc');
+    }
   }
 
-  // Actions
+  function SortIcon({ field }: { field: SortField }) {
+    if (sortField !== field) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 opacity-40" />;
+    return sortDir === 'asc' ? <ArrowUp className="ml-1 h-3.5 w-3.5" /> : <ArrowDown className="ml-1 h-3.5 w-3.5" />;
+  }
+
   async function handlePay(ids: string[], dataPagamento: string, contaId: string) {
-    // Check if payment month is blocked
-    const pgtoMesAno = dataPagamento.substring(0, 7);
-    const pgtoBlocked = bloqueios.some(b => b.tipo === 'pagamento' && b.mes_ano === pgtoMesAno);
-    if (pgtoBlocked) {
-      toast.error(`O mês ${pgtoMesAno} está bloqueado para pagamentos.`);
+    const paymentMonth = dataPagamento.slice(0, 7);
+    const paymentBlocked = bloqueios.some((bloqueio) => bloqueio.tipo === 'pagamento' && bloqueio.mes_ano === paymentMonth);
+    if (paymentBlocked) {
+      toast.error(`O mês ${paymentMonth} está bloqueado para pagamentos.`);
       setPayModalOpen(false);
       return;
     }
+
     for (const id of ids) {
-      const d = despesas.find((x) => x.id === id);
-      if (d && isBlocked(d.competencia, d.data_pagamento)) {
-        toast.error(`Despesa bloqueada: ${d.descricao || d.id}`);
+      const despesa = despesas.find((item) => item.id === id);
+      if (despesa && isBlocked(despesa.competencia, despesa.data_pagamento)) {
+        toast.error(`Despesa bloqueada: ${despesa.descricao || despesa.id}`);
         continue;
       }
       await supabase.from('despesas').update({ paga: true, data_pagamento: dataPagamento, conta_id: contaId }).eq('id', id);
     }
+
     toast.success('Pagamento(s) registrado(s)!');
     setPayModalOpen(false);
     setSelected(new Set());
@@ -292,8 +341,8 @@ export default function Despesas() {
   }
 
   async function handleCancelPayment(id: string) {
-    const d = despesas.find((x) => x.id === id);
-    if (d && isBlocked(d.competencia, d.data_pagamento)) {
+    const despesa = despesas.find((item) => item.id === id);
+    if (despesa && isBlocked(despesa.competencia, despesa.data_pagamento)) {
       toast.error('Não é possível cancelar pagamento de despesa em mês bloqueado.');
       return;
     }
@@ -304,283 +353,360 @@ export default function Despesas() {
 
   async function handleDelete(ids: string[]) {
     for (const id of ids) {
-      const d = despesas.find((x) => x.id === id);
-      if (!d) continue;
-      if (d.is_cartao) { toast.error('Despesas de Cartão de Crédito devem ser gerenciadas pelo menu Faturas.'); continue; }
-      if (isBlocked(d.competencia, d.data_pagamento)) { toast.error(`Despesa bloqueada: ${d.descricao || d.id}`); continue; }
+      const despesa = despesas.find((item) => item.id === id);
+      if (!despesa) continue;
+      if (despesa.is_cartao) {
+        toast.error('Despesas de Cartão de Crédito devem ser gerenciadas pelo menu Faturas.');
+        continue;
+      }
+      if (isBlocked(despesa.competencia, despesa.data_pagamento)) {
+        toast.error(`Despesa bloqueada: ${despesa.descricao || despesa.id}`);
+        continue;
+      }
       await supabase.from('despesas').delete().eq('id', id);
     }
+
     toast.success('Despesa(s) excluída(s).');
     setDeleteConfirmOpen(false);
     setSelected(new Set());
     loadData();
   }
 
-  function handleEdit(d: DespesaRow) {
-    if (d.is_cartao) {
+  function handleEdit(item: DespesaRow) {
+    if (item.is_cartao) {
       toast.error('Despesas de Cartão de Crédito devem ser editadas pelo menu Faturas.');
       return;
     }
-    navigate(`/editar/${d.id}`);
+    navigate(`/editar/${item.id}`);
   }
 
-  // Export
+  function clearFilters() {
+    setDraftFilters(defaultFilters);
+    setAppliedFilters(defaultFilters);
+  }
+
   const exportColumns = [
-    { header: 'Vencimento', key: 'data' },
+    { header: 'Vencimento', key: 'data_display' },
     { header: 'Categoria', key: 'categoria_nome' },
     { header: 'Subcategoria', key: 'subcategoria_nome' },
     { header: 'Descrição', key: 'descricao' },
     { header: 'Parcela', key: 'parcela_display' },
-    { header: 'Conta', key: 'conta_nome' },
-    { header: 'Competência', key: 'competencia' },
+    { header: 'Competência', key: 'competencia_display' },
     { header: 'Valor', key: 'valor_display' },
-    { header: 'Pagamento', key: 'data_pagamento' },
-    { header: 'Cadastro', key: 'created_at_display' },
+    { header: 'Pagamento', key: 'pagamento_display' },
   ];
 
   function getExportData() {
-    return filtered.map((d) => ({
-      ...d,
-      parcela_display: d.parcela && d.total_parcelas ? `${d.parcela}/${d.total_parcelas}` : '—',
-      valor_display: formatCurrency(d.valor),
-      created_at_display: d.created_at ? new Date(d.created_at).toLocaleDateString('pt-BR') : '—',
-      data_pagamento: d.data_pagamento || '—',
+    return filtered.map((item) => ({
+      ...item,
+      data_display: formatDisplayDate(item.data),
+      parcela_display: formatInstallmentDisplay(item.parcela, item.total_parcelas),
+      competencia_display: formatCompactCompetencia(item.competencia),
+      valor_display: formatCurrency(item.valor),
+      pagamento_display: formatDisplayDate(item.data_pagamento),
     }));
   }
 
-  // Date filter helper
-  function DateFilter({ value, onChange, placeholder }: { value: Date | undefined; onChange: (d: Date | undefined) => void; placeholder: string }) {
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className={cn('h-9 w-full justify-start text-left text-xs', !value && 'text-muted-foreground')}>
-            <CalendarIcon className="mr-1 h-3 w-3" />
-            {value ? format(value, 'dd/MM/yy') : placeholder}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar mode="single" selected={value} onSelect={onChange} locale={ptBR} initialFocus className="p-3 pointer-events-auto" />
-        </PopoverContent>
-      </Popover>
-    );
-  }
+  const years = Array.from({ length: 10 }, (_, index) => String(new Date().getFullYear() - 3 + index));
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Despesas</h1>
-          <p className="text-muted-foreground text-sm">Gerencie todas as suas despesas</p>
+          <h1 className="text-2xl font-bold tracking-tight">Despesas</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Visual mais limpo, filtros objetivos e leitura rápida do que já foi quitado.</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
-            <Filter className="mr-1 h-4 w-4" /> Filtros
-          </Button>
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-            <FileSpreadsheet className="mr-1 h-4 w-4" /> Importar
+            <FileSpreadsheet className="mr-2 h-4 w-4" /> Importar
           </Button>
           <Button variant="outline" size="sm" onClick={() => exportToExcel(getExportData(), exportColumns, 'despesas')}>
-            <FileSpreadsheet className="mr-1 h-4 w-4" /> Excel
+            <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
           </Button>
           <Button variant="outline" size="sm" onClick={() => exportToPDF(getExportData(), exportColumns, 'Relatório de Despesas', 'despesas')}>
-            <FileText className="mr-1 h-4 w-4" /> PDF
+            <FileText className="mr-2 h-4 w-4" /> PDF
           </Button>
           <Button size="sm" onClick={() => navigate('/nova-despesa')}>
-            <Plus className="mr-1 h-4 w-4" /> Nova Despesa
+            <Plus className="mr-2 h-4 w-4" /> Nova Despesa
           </Button>
         </div>
       </div>
 
-      {/* Filters */}
-      {showFilters && (
-        <Card>
-          <CardContent className="pt-4">
-            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
-              <Select value={fCategoria} onValueChange={setFCategoria}>
-                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Categoria" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas Categorias</SelectItem>
-                  {categorias.map((c) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={fConta} onValueChange={setFConta}>
-                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Conta" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas Contas</SelectItem>
-                  {contas.map((c) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <div className="flex gap-1">
-                <Select value={fCompMes} onValueChange={setFCompMes}>
-                  <SelectTrigger className="h-9 text-xs w-16"><SelectValue placeholder="Mês" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Mês</SelectItem>
-                    {Array.from({ length: 12 }, (_, i) => <SelectItem key={i + 1} value={String(i + 1)}>{String(i + 1).padStart(2, '0')}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <Input className="h-9 text-xs w-20" placeholder="Ano" value={fCompAno} onChange={(e) => setFCompAno(e.target.value)} />
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="stat-card">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Total filtrado</p>
+                <p className="mt-2 text-2xl font-semibold">{formatCurrency(total)}</p>
               </div>
-              <Select value={fSituacao} onValueChange={setFSituacao}>
-                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Situação" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="pagas">Pagas</SelectItem>
-                  <SelectItem value="nao_pagas">Não Pagas</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input className="h-9 text-xs" placeholder="Buscar descrição..." value={fDescricao} onChange={(e) => setFDescricao(e.target.value)} />
-              <div className="flex gap-1">
-                <DateFilter value={fCadastroInicio} onChange={setFCadastroInicio} placeholder="Cad. De" />
-                <DateFilter value={fCadastroFim} onChange={setFCadastroFim} placeholder="Cad. Até" />
-              </div>
-              <div className="flex gap-1">
-                <DateFilter value={fPagtoInicio} onChange={setFPagtoInicio} placeholder="Pgto De" />
-                <DateFilter value={fPagtoFim} onChange={setFPagtoFim} placeholder="Pgto Até" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+                <TrendingDown className="h-5 w-5" />
               </div>
             </div>
           </CardContent>
         </Card>
-      )}
+        <Card className="stat-card">
+          <CardContent className="p-5">
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quitadas</p>
+            <p className="mt-2 text-2xl font-semibold">{formatCurrency(totalPagas)}</p>
+          </CardContent>
+        </Card>
+        <Card className="stat-card">
+          <CardContent className="p-5">
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Em aberto</p>
+            <p className="mt-2 text-2xl font-semibold">{formatCurrency(totalAbertas)}</p>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Bulk actions */}
-      {selected.size > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border bg-card p-2 text-sm">
-          <span className="text-muted-foreground">{selected.size} selecionada(s)</span>
-          <Button size="sm" variant="outline" onClick={() => { setPayIds(Array.from(selected)); setPayModalOpen(true); }}>
-            <CheckCircle className="mr-1 h-3 w-3" /> Pagar
-          </Button>
-          <Button size="sm" variant="destructive" onClick={() => { setDeleteIds(Array.from(selected)); setDeleteConfirmOpen(true); }}>
-            <Trash2 className="mr-1 h-3 w-3" /> Excluir
-          </Button>
-        </div>
-      )}
+      <Card className="listing-filter-card">
+        <CardHeader className="px-0 pt-0">
+          <CardTitle className="text-base">Filtros</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 px-0 pb-0">
+          <div className="listing-filter-grid">
+            <div className="listing-filter-field col-span-12 md:col-span-3">
+              <label className="listing-filter-label">Categoria</label>
+              <Select value={draftFilters.categoria} onValueChange={(value) => updateDraft('categoria', value)}>
+                <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {categorias.map((categoria) => <SelectItem key={categoria.id} value={categoria.id}>{categoria.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="listing-filter-field col-span-12 md:col-span-3">
+              <label className="listing-filter-label">Subcategoria</label>
+              <Select value={draftFilters.subcategoria} onValueChange={(value) => updateDraft('subcategoria', value)}>
+                <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {filteredSubcategorias.map((subcategoria) => <SelectItem key={subcategoria.id} value={subcategoria.id}>{subcategoria.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="listing-filter-field col-span-12 md:col-span-2">
+              <label className="listing-filter-label">Status</label>
+              <Select value={draftFilters.situacao} onValueChange={(value) => updateDraft('situacao', value)}>
+                <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="pagas">Quitadas</SelectItem>
+                  <SelectItem value="nao_pagas">Em aberto</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="listing-filter-field col-span-12 md:col-span-4">
+              <label className="listing-filter-label">Busca por descrição</label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input className="h-10 pl-9" placeholder="Ex.: aluguel, mercado, internet..." value={draftFilters.descricao} onChange={(e) => updateDraft('descricao', e.target.value)} />
+              </div>
+            </div>
 
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-table-header text-table-header-foreground">
-                  <th className="px-3 py-2.5 w-10">
-                    <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
-                  </th>
-                  {[
-                    { label: 'Vencimento', field: 'data' as SortField },
-                    { label: 'Categoria', field: 'categoria_nome' as SortField },
-                    { label: 'Subcategoria', field: 'subcategoria_nome' as SortField },
-                    { label: 'Descrição', field: 'descricao' as SortField },
-                    { label: 'Parcela', field: 'parcela' as SortField },
-                    { label: 'Conta', field: 'conta_nome' as SortField },
-                    { label: 'Competência', field: 'competencia' as SortField },
-                    { label: 'Valor', field: 'valor' as SortField },
-                    { label: 'Pagamento', field: 'data_pagamento' as SortField },
-                    { label: 'Cadastro', field: 'created_at' as SortField },
-                  ].map(({ label, field }) => (
-                    <th
-                      key={field}
-                      className="px-3 py-2.5 text-left text-xs font-semibold cursor-pointer whitespace-nowrap select-none"
-                      onClick={() => handleSort(field)}
-                    >
-                      <span className="flex items-center">
-                        {label}
-                        <SortIcon field={field} />
-                      </span>
-                    </th>
-                  ))}
-                  <th className="px-3 py-2.5 text-xs font-semibold">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={12} className="px-3 py-8 text-center text-muted-foreground">Carregando...</td></tr>
-                ) : filtered.length === 0 ? (
-                  <tr><td colSpan={12} className="px-3 py-8 text-center text-muted-foreground">Nenhuma despesa encontrada.</td></tr>
-                ) : (
-                  filtered.map((d) => {
-                    const blocked = isBlocked(d.competencia, d.data_pagamento);
-                    return (
-                      <tr key={d.id} className={cn('border-b hover:bg-muted/30', d.paga && 'opacity-70')}>
-                        <td className="px-3 py-2"><Checkbox checked={selected.has(d.id)} onCheckedChange={() => toggleOne(d.id)} /></td>
-                        <td className="px-3 py-2 whitespace-nowrap">{d.data}</td>
-                        <td className="px-3 py-2">{d.categoria_nome}</td>
-                        <td className="px-3 py-2">{d.subcategoria_nome}</td>
-                        <td className="px-3 py-2 max-w-[200px] truncate">{d.descricao || '—'}</td>
-                        <td className="px-3 py-2 whitespace-nowrap">{d.parcela && d.total_parcelas ? `${d.parcela}/${d.total_parcelas}` : '—'}</td>
-                        <td className="px-3 py-2">{d.conta_nome}</td>
-                        <td className="px-3 py-2 whitespace-nowrap">{d.competencia || '—'}</td>
-                        <td className="px-3 py-2 whitespace-nowrap font-medium text-destructive">{formatCurrency(d.valor)}</td>
-                        <td className="px-3 py-2 whitespace-nowrap">{d.data_pagamento || '—'}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-xs">{d.created_at ? new Date(d.created_at).toLocaleDateString('pt-BR') : '—'}</td>
-                        <td className="px-3 py-2">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEdit(d)} disabled={blocked || d.is_cartao}>
-                                <Pencil className="mr-2 h-3 w-3" /> Editar
-                              </DropdownMenuItem>
-                              {!d.paga && (
-                                <DropdownMenuItem onClick={() => { setPayIds([d.id]); setPayModalOpen(true); }} disabled={blocked}>
-                                  <CheckCircle className="mr-2 h-3 w-3" /> Pagar
-                                </DropdownMenuItem>
-                              )}
-                              {d.paga && (
-                                <DropdownMenuItem onClick={() => handleCancelPayment(d.id)} disabled={blocked}>
-                                  <XCircle className="mr-2 h-3 w-3" /> Cancelar Pagamento
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => { setDeleteIds([d.id]); setDeleteConfirmOpen(true); }}
-                                disabled={blocked || d.is_cartao}
-                              >
-                                <Trash2 className="mr-2 h-3 w-3" /> Excluir
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-              {filtered.length > 0 && (
-                <tfoot>
-                  <tr className="bg-muted/50 font-semibold">
-                    <td colSpan={8} className="px-3 py-2 text-right">Total:</td>
-                    <td className="px-3 py-2 text-destructive">{formatCurrency(total)}</td>
-                    <td colSpan={3}></td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+            <div className="listing-filter-field col-span-12 md:col-span-3">
+              <label className="listing-filter-label">Competência inicial</label>
+              <div className="grid grid-cols-[1fr_1fr] gap-2">
+                <Select value={draftFilters.compInicioMes} onValueChange={(value) => updateDraft('compInicioMes', value)}>
+                  <SelectTrigger className="h-10"><SelectValue placeholder="Mês" /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, index) => <SelectItem key={index + 1} value={String(index + 1).padStart(2, '0')}>{String(index + 1).padStart(2, '0')}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={draftFilters.compInicioAno} onValueChange={(value) => updateDraft('compInicioAno', value)}>
+                  <SelectTrigger className="h-10"><SelectValue placeholder="Ano" /></SelectTrigger>
+                  <SelectContent>
+                    {years.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="listing-filter-field col-span-12 md:col-span-3">
+              <label className="listing-filter-label">Competência final</label>
+              <div className="grid grid-cols-[1fr_1fr] gap-2">
+                <Select value={draftFilters.compFimMes} onValueChange={(value) => updateDraft('compFimMes', value)}>
+                  <SelectTrigger className="h-10"><SelectValue placeholder="Mês" /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, index) => <SelectItem key={index + 1} value={String(index + 1).padStart(2, '0')}>{String(index + 1).padStart(2, '0')}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={draftFilters.compFimAno} onValueChange={(value) => updateDraft('compFimAno', value)}>
+                  <SelectTrigger className="h-10"><SelectValue placeholder="Ano" /></SelectTrigger>
+                  <SelectContent>
+                    {years.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="listing-filter-field col-span-12 md:col-span-3">
+              <label className="listing-filter-label">Data de vencimento de</label>
+              <DateFilter value={draftFilters.vencimentoInicio} onChange={(value) => updateDraft('vencimentoInicio', value)} placeholder="Selecione a data" />
+            </div>
+            <div className="listing-filter-field col-span-12 md:col-span-3">
+              <label className="listing-filter-label">Data de vencimento até</label>
+              <DateFilter value={draftFilters.vencimentoFim} onChange={(value) => updateDraft('vencimentoFim', value)} placeholder="Selecione a data" />
+            </div>
+
+            <div className="listing-filter-field col-span-12 md:col-span-3">
+              <label className="listing-filter-label">Data de pagamento de</label>
+              <DateFilter value={draftFilters.pagamentoInicio} onChange={(value) => updateDraft('pagamentoInicio', value)} placeholder="Selecione a data" />
+            </div>
+            <div className="listing-filter-field col-span-12 md:col-span-3">
+              <label className="listing-filter-label">Data de pagamento até</label>
+              <DateFilter value={draftFilters.pagamentoFim} onChange={(value) => updateDraft('pagamentoFim', value)} placeholder="Selecione a data" />
+            </div>
+            <div className="col-span-12 md:col-span-3 flex items-end">
+              <Button className="h-10 w-full" onClick={() => setAppliedFilters(draftFilters)}>Filtrar</Button>
+            </div>
+            <div className="col-span-12 md:col-span-3 flex items-end">
+              <Button variant="outline" className="h-10 w-full" onClick={clearFilters}>
+                <FilterX className="mr-2 h-4 w-4" /> Limpar filtros
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Pay Modal */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-card px-4 py-3 text-sm shadow-sm">
+          <span className="font-medium text-foreground">{selected.size} selecionada(s)</span>
+          <span className="text-muted-foreground">Ações em massa</span>
+          <Button size="sm" variant="outline" onClick={() => { setPayIds(Array.from(selected)); setPayModalOpen(true); }}>
+            <CheckCircle className="mr-2 h-3.5 w-3.5" /> Pagar
+          </Button>
+          <Button size="sm" variant="destructive" onClick={() => { setDeleteIds(Array.from(selected)); setDeleteConfirmOpen(true); }}>
+            <Trash2 className="mr-2 h-3.5 w-3.5" /> Excluir
+          </Button>
+        </div>
+      )}
+
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
+          <table className="listing-table">
+            <colgroup>
+              <col className="w-[44px]" />
+              <col className="w-[96px]" />
+              <col className="w-[130px]" />
+              <col className="w-[138px]" />
+              <col className="w-auto" />
+              <col className="w-[78px]" />
+              <col className="w-[82px]" />
+              <col className="w-[120px]" />
+              <col className="w-[108px]" />
+              <col className="w-[70px]" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="px-3 py-3"><Checkbox checked={allSelected} onCheckedChange={toggleAll} /></th>
+                {[
+                  { label: 'Vencimento', field: 'data' as SortField, align: 'text-left' },
+                  { label: 'Categoria', field: 'categoria_nome' as SortField, align: 'text-left' },
+                  { label: 'Subcategoria', field: 'subcategoria_nome' as SortField, align: 'text-left' },
+                  { label: 'Descrição', field: 'descricao' as SortField, align: 'text-left' },
+                  { label: 'Parcela', field: 'parcela' as SortField, align: 'text-left' },
+                  { label: 'Competência', field: 'competencia' as SortField, align: 'text-left' },
+                  { label: 'Valor', field: 'valor' as SortField, align: 'text-right' },
+                  { label: 'Pagamento', field: 'data_pagamento' as SortField, align: 'text-left' },
+                ].map(({ label, field, align }) => (
+                  <th key={field} className={`px-3 py-3 text-xs font-semibold ${align}`}>
+                    <button type="button" className="inline-flex items-center" onClick={() => handleSort(field)}>
+                      {label}
+                      <SortIcon field={field} />
+                    </button>
+                  </th>
+                ))}
+                <th className="px-3 py-3 text-right text-xs font-semibold">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">Carregando...</td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">Nenhuma despesa encontrada.</td>
+                </tr>
+              ) : (
+                filtered.map((item) => {
+                  const blocked = isBlocked(item.competencia, item.data_pagamento);
+                  return (
+                    <tr key={item.id} className={cn('border-b border-border/60 align-top transition-colors hover:bg-muted/30', item.paga ? 'listing-row-paid' : 'listing-row-open')}>
+                      <td className="px-3 py-3">
+                        <Checkbox checked={selected.has(item.id)} onCheckedChange={() => toggleOne(item.id)} />
+                      </td>
+                      <td className="px-3 py-3 text-sm whitespace-nowrap">{formatDisplayDate(item.data)}</td>
+                      <td className="px-3 py-3 text-sm">
+                        <div className="truncate font-medium">{item.categoria_nome}</div>
+                      </td>
+                      <td className="px-3 py-3 text-sm">
+                        <div className="truncate text-muted-foreground">{item.subcategoria_nome}</div>
+                      </td>
+                      <td className="px-3 py-3 text-sm">
+                        <div className="listing-description font-medium text-foreground">{item.descricao || '—'}</div>
+                      </td>
+                      <td className="px-3 py-3 text-sm whitespace-nowrap">{formatInstallmentDisplay(item.parcela, item.total_parcelas)}</td>
+                      <td className="px-3 py-3 text-sm whitespace-nowrap">{formatCompactCompetencia(item.competencia)}</td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap font-semibold text-destructive">{formatCurrency(item.valor)}</td>
+                      <td className="px-3 py-3 text-sm whitespace-nowrap">{formatDisplayDate(item.data_pagamento)}</td>
+                      <td className="px-3 py-3 text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEdit(item)} disabled={blocked}>
+                              <Pencil className="mr-2 h-3.5 w-3.5" /> Editar
+                            </DropdownMenuItem>
+                            {!item.paga && (
+                              <DropdownMenuItem onClick={() => { setPayIds([item.id]); setPayModalOpen(true); }} disabled={blocked}>
+                                <CheckCircle className="mr-2 h-3.5 w-3.5" /> Confirmar pagamento
+                              </DropdownMenuItem>
+                            )}
+                            {item.paga && (
+                              <DropdownMenuItem onClick={() => handleCancelPayment(item.id)} disabled={blocked}>
+                                <XCircle className="mr-2 h-3.5 w-3.5" /> Cancelar pagamento
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem className="text-destructive" onClick={() => { setDeleteIds([item.id]); setDeleteConfirmOpen(true); }} disabled={blocked}>
+                              <Trash2 className="mr-2 h-3.5 w-3.5" /> Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            {filtered.length > 0 && (
+              <tfoot>
+                <tr className="bg-muted/40">
+                  <td colSpan={7} className="px-3 py-3 text-right text-sm font-semibold">Total</td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold text-destructive">{formatCurrency(total)}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </CardContent>
+      </Card>
+
       <PayModal
         open={payModalOpen}
         onClose={() => setPayModalOpen(false)}
-        onConfirm={(dt, ct) => handlePay(payIds, dt, ct)}
+        onConfirm={(dataPagamento, contaId) => handlePay(payIds, dataPagamento, contaId)}
         contas={contas}
-        title="Pagar Despesa(s)"
-        confirmLabel="Confirmar Pagamento"
       />
 
-      {/* Delete Confirm */}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja excluir {deleteIds.length} despesa(s)? Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Tem certeza que deseja excluir {deleteIds.length} despesa(s)?</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
@@ -588,6 +714,7 @@ export default function Despesas() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
       {user && (
         <ImportTransactionsDialog
           kind="despesas"
