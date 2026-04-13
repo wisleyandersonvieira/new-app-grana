@@ -1,10 +1,12 @@
-import { extractInstallmentInfo, normalizeStatementDescription } from '../normalization';
+import { extractInstallmentInfo, normalizeStatementDescription, stripAccents } from '../normalization';
 import type { ParsedStatementItem, ParserContext, StatementParser } from '../types';
 
-const AMOUNT_AT_END_PATTERN = /(-?\d[\d.]*,\d{2})$/;
+// Matches a positive or negative Brazilian currency value at the end of a line.
+// Also handles "- 52,50" (minus sign separated by space, as used in Itaú reversals).
+const AMOUNT_AT_END_PATTERN = /(-\s*\d[\d.]*,\d{2}|\d[\d.]*,\d{2})$/;
 
 function parseAmount(raw: string): number {
-  const normalized = raw.replace(/\./g, '').replace(',', '.');
+  const normalized = raw.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
   return Number.parseFloat(normalized);
 }
 
@@ -17,25 +19,36 @@ function inferPurchaseDate(dayMonth: string, competencia: string): string | null
 }
 
 function isNoiseLine(line: string): boolean {
+  // Strip accents so patterns work regardless of diacritics in extracted PDF text
+  // e.g. "Lançamentos" is normalised to "Lancamentos" before matching.
+  const normalized = stripAccents(line).toLowerCase();
+
   const noisePatterns = [
-    /resumo da fatura/i,
-    /lancamentos/i,
-    /movimentac/i,
-    /pagamento minimo/i,
-    /saldo anterior/i,
-    /limite/i,
-    /encargos/i,
-    /iof/i,
-    /c et/i,
-    /total/i,
-    /rotativo/i,
-    /anuidade/i,
-    /juros/i,
-    /programa/i,
-    /central de atendimento/i,
+    /resumo da fatura/,
+    /lancamentos/,
+    /movimentac/,
+    /pagamento minimo/,
+    /saldo anterior/,
+    /limite/,
+    /encargos/,
+    /iof/,
+    /\bcet\b/,
+    /total/,
+    /rotativo/,
+    /juros/,
+    /programa/,
+    /central de atendimento/,
+    // Future-instalment summary lines present in Itaú statements
+    /proxima fatura/,
+    /demais faturas/,
+    // Exchange-rate metadata lines from international transactions
+    /dolar.*conversao/,
+    /conversao.*dolar/,
+    // Repasse de IOF line
+    /repasse.*iof/,
   ];
 
-  return noisePatterns.some((pattern) => pattern.test(line));
+  return noisePatterns.some((pattern) => pattern.test(normalized));
 }
 
 export abstract class BaseStatementParser implements StatementParser {
