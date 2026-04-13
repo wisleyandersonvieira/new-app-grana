@@ -54,14 +54,15 @@ interface ParcelaRow {
 interface UltimaDespesa {
   descricao: string | null;
   valor: number;
-  data: string;
+  data: string | null;
   categoria_nome: string | null;
   paga: boolean;
+  created_at: string | null;
 }
 
 type DespesaRow = Database['public']['Tables']['despesas']['Row'];
 
-interface UltimaDespesaQueryRow extends Pick<DespesaRow, 'descricao' | 'valor' | 'data' | 'paga'> {
+interface UltimaDespesaQueryRow extends Pick<DespesaRow, 'descricao' | 'valor' | 'data' | 'paga' | 'created_at'> {
   categorias: { nome: string } | { nome: string }[] | null;
 }
 
@@ -74,6 +75,13 @@ function formatIsoDateToDisplay(date: string | null) {
 
   const parsedDate = parse(date, 'yyyy-MM-dd', new Date());
   return isValid(parsedDate) ? formatDateToDisplay(parsedDate) : date;
+}
+
+function formatTimestampToDisplay(timestamp: string | null) {
+  if (!timestamp) return '—';
+
+  const parsedDate = new Date(timestamp);
+  return Number.isNaN(parsedDate.getTime()) ? timestamp : format(parsedDate, 'dd-MM-yyyy HH:mm:ss');
 }
 
 function parseManualDateInput(value: string) {
@@ -123,6 +131,29 @@ export default function NovaDespesaPage() {
     [subcategorias, categoriaId]
   );
 
+  const getCategoriaNome = useCallback(
+    (id: string | null | undefined) => categorias.find((categoria) => categoria.id === id)?.nome || null,
+    [categorias]
+  );
+
+  const setLastExpensePreview = useCallback((expense: {
+    descricao: string | null;
+    valor: number;
+    data: string | null;
+    paga: boolean;
+    created_at: string | null;
+    categoriaId?: string | null;
+  }) => {
+    setUltimaDespesa({
+      descricao: expense.descricao,
+      valor: expense.valor,
+      data: expense.data,
+      categoria_nome: getCategoriaNome(expense.categoriaId),
+      paga: expense.paga,
+      created_at: expense.created_at,
+    });
+  }, [getCategoriaNome]);
+
   const setLastExpenseFromRow = useCallback((row: UltimaDespesaQueryRow | null) => {
     if (!row) {
       setUltimaDespesa(null);
@@ -137,6 +168,7 @@ export default function NovaDespesaPage() {
       data: row.data,
       categoria_nome: categoria?.nome || null,
       paga: Boolean(row.paga),
+      created_at: row.created_at,
     });
   }, []);
 
@@ -147,9 +179,10 @@ export default function NovaDespesaPage() {
     try {
       const { data, error } = await supabase
         .from('despesas')
-        .select('descricao, valor, data, paga, categorias(nome)')
+        .select('id, descricao, valor, data, paga, created_at, categorias(nome)')
         .eq('usuario_id', user.id)
         .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -290,8 +323,33 @@ export default function NovaDespesaPage() {
           usuario_id: user!.id,
         }));
 
-        const { error } = await supabase.from('despesas').insert(inserts);
+        const { data: insertedRows, error } = await supabase
+          .from('despesas')
+          .insert(inserts)
+          .select('id, created_at');
+
         if (error) throw error;
+
+        const latestIndex = insertedRows?.reduce((latestRowIndex, row, index, rows) => {
+          const latestRow = rows[latestRowIndex];
+          const currentCreatedAt = row.created_at ? new Date(row.created_at).getTime() : 0;
+          const latestCreatedAt = latestRow?.created_at ? new Date(latestRow.created_at).getTime() : 0;
+
+          return currentCreatedAt >= latestCreatedAt ? index : latestRowIndex;
+        }, 0) ?? inserts.length - 1;
+
+        const latestInsert = inserts[latestIndex] ?? inserts[inserts.length - 1];
+        const latestInsertedRow = insertedRows?.[latestIndex] ?? insertedRows?.[insertedRows.length - 1] ?? null;
+
+        setLastExpensePreview({
+          descricao: latestInsert.descricao,
+          valor: latestInsert.valor,
+          data: latestInsert.data,
+          paga: Boolean(latestInsert.paga),
+          created_at: latestInsertedRow?.created_at ?? new Date().toISOString(),
+          categoriaId,
+        });
+
         toast.success(`${parcelas.length} parcelas salvas com sucesso!`);
       } else {
         // Save single
@@ -310,8 +368,23 @@ export default function NovaDespesaPage() {
           usuario_id: user!.id,
         };
 
-        const { error } = await supabase.from('despesas').insert(insert);
+        const { data: insertedRow, error } = await supabase
+          .from('despesas')
+          .insert(insert)
+          .select('created_at')
+          .single();
+
         if (error) throw error;
+
+        setLastExpensePreview({
+          descricao: insert.descricao,
+          valor: insert.valor,
+          data: insert.data,
+          paga: Boolean(insert.paga),
+          created_at: insertedRow.created_at,
+          categoriaId,
+        });
+
         toast.success(marcarPaga ? 'Despesa salva e paga!' : 'Despesa salva com sucesso!');
       }
 
@@ -326,7 +399,6 @@ export default function NovaDespesaPage() {
       setParcelas([]);
       setShowParcelas(false);
 
-      await loadUltimaDespesa();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro ao salvar despesa.';
       toast.error(message);
@@ -663,6 +735,10 @@ export default function NovaDespesaPage() {
                   <div>
                     <span className="text-muted-foreground">Data:</span>{' '}
                     <span className="font-medium">{formatIsoDateToDisplay(ultimaDespesa.data)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Cadastrada em:</span>{' '}
+                    <span className="font-medium">{formatTimestampToDisplay(ultimaDespesa.created_at)}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Status:</span>{' '}
