@@ -130,7 +130,7 @@ function buildRowsForPdf(
   const categoryNames = Object.keys(data.cats).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   if (categoryNames.length === 0) return rows;
 
-  const sectionColor =
+  const sectionColor: [number, number, number] =
     tone === 'positive' ? [231, 247, 237] : tone === 'negative' ? [255, 241, 242] : [239, 244, 255];
 
   rows.push([
@@ -139,8 +139,8 @@ function buildRowsForPdf(
       colSpan: months.length + 1,
       styles: {
         fillColor: sectionColor,
-        textColor: [17, 24, 39],
-        fontStyle: 'bold',
+        textColor: [17, 24, 39] as [number, number, number],
+        fontStyle: 'bold' as const,
         fontSize: 10,
         halign: 'left',
         cellPadding: { top: 4, right: 4, bottom: 4, left: 4 },
@@ -153,18 +153,18 @@ function buildRowsForPdf(
       {
         content: catNome,
         styles: {
-          fontStyle: 'bold',
-          fillColor: [248, 250, 252],
-          textColor: [15, 23, 42],
+          fontStyle: 'bold' as const,
+          fillColor: [248, 250, 252] as [number, number, number],
+          textColor: [15, 23, 42] as [number, number, number],
         },
       },
       ...months.map((month) => ({
         content: formatCurrency(data.cats[catNome][month] ?? 0),
         styles: {
-          fontStyle: 'bold',
-          fillColor: [248, 250, 252],
-          halign: 'right',
-          textColor: [15, 23, 42],
+          fontStyle: 'bold' as const,
+          fillColor: [248, 250, 252] as [number, number, number],
+          halign: 'right' as const,
+          textColor: [15, 23, 42] as [number, number, number],
         },
       })),
     ]);
@@ -176,14 +176,14 @@ function buildRowsForPdf(
           {
             content: `   ${subNome}`,
             styles: {
-              textColor: [71, 85, 105],
+              textColor: [71, 85, 105] as [number, number, number],
             },
           },
           ...months.map((month) => ({
             content: formatCurrency(data.subs[catNome][subNome][month] ?? 0),
             styles: {
-              halign: 'right',
-              textColor: [71, 85, 105],
+              halign: 'right' as const,
+              textColor: [71, 85, 105] as [number, number, number],
             },
           })),
         ]);
@@ -194,18 +194,18 @@ function buildRowsForPdf(
     {
       content: `Total ${title}`,
       styles: {
-        fontStyle: 'bold',
-        fillColor: [226, 232, 240],
-        textColor: [15, 23, 42],
+        fontStyle: 'bold' as const,
+        fillColor: [226, 232, 240] as [number, number, number],
+        textColor: [15, 23, 42] as [number, number, number],
       },
     },
     ...months.map((month) => ({
       content: formatCurrency(data.totals[month] ?? 0),
       styles: {
-        fontStyle: 'bold',
-        fillColor: [226, 232, 240],
-        halign: 'right',
-        textColor: [15, 23, 42],
+        fontStyle: 'bold' as const,
+        fillColor: [226, 232, 240] as [number, number, number],
+        halign: 'right' as const,
+        textColor: [15, 23, 42] as [number, number, number],
       },
     })),
   ]);
