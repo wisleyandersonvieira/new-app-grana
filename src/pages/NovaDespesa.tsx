@@ -181,8 +181,8 @@ export default function NovaDespesaPage() {
         .from('despesas')
         .select('id, descricao, valor, data, paga, created_at, categorias(nome)')
         .eq('usuario_id', user.id)
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
+        .not('created_at', 'is', null)
+        .order('created_at', { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle();
 
