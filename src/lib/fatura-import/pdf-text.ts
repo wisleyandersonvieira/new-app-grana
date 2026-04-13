@@ -8,18 +8,37 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 type TextToken = { x: number; y: number; str: string; width: number };
 
 /**
- * Groups text items that share a similar Y position into the same line,
- * then sorts tokens left-to-right within each line and top-to-bottom
- * across lines. This reconstructs readable text from PDFs that use
- * multi-column or fragmented layouts (common in bank statements).
+ * Splits tokens into columns when a page has a clear two-column layout.
+ * Detects the split by looking for a gap in X positions.
  */
-function reconstructLines(tokens: TextToken[]): string[] {
+function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][] {
+  if (tokens.length === 0) return [[]];
+
+  // Collect all X positions to find the column gap
+  const xPositions = tokens.map((t) => t.x).sort((a, b) => a - b);
+  const midpoint = pageWidth / 2;
+
+  // Check if there are tokens on both sides of the midpoint
+  const leftTokens = tokens.filter((t) => t.x < midpoint - 10);
+  const rightTokens = tokens.filter((t) => t.x >= midpoint - 10);
+
+  // Only split if both sides have a reasonable number of tokens
+  if (leftTokens.length > 5 && rightTokens.length > 5) {
+    return [leftTokens, rightTokens];
+  }
+
+  return [tokens];
+}
+
+/**
+ * Groups tokens by Y position (within tolerance) and reconstructs lines
+ * by sorting tokens left-to-right within each group.
+ */
+function tokensToLines(tokens: TextToken[]): string[] {
   if (tokens.length === 0) return [];
 
-  // Sort by Y descending (PDF coordinate system: Y grows upward)
   const sorted = [...tokens].sort((a, b) => b.y - a.y);
 
-  // Group tokens into lines by Y proximity (within 3 units = same line)
   const lines: TextToken[][] = [];
   let currentLine: TextToken[] = [sorted[0]];
   let currentY = sorted[0].y;
@@ -35,16 +54,13 @@ function reconstructLines(tokens: TextToken[]): string[] {
   }
   lines.push(currentLine);
 
-  // Sort tokens within each line by X position (left to right)
   return lines.map((line) => {
     line.sort((a, b) => a.x - b.x);
-
-    // Join tokens with appropriate spacing
     let result = '';
     for (let i = 0; i < line.length; i++) {
       if (i > 0) {
         const gap = line[i].x - (line[i - 1].x + line[i - 1].width);
-        result += gap > 5 ? ' ' : '';
+        result += gap > 3 ? ' ' : '';
       }
       result += line[i].str;
     }
@@ -59,6 +75,7 @@ export async function extractTextFromPdf(file: File): Promise<string> {
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1 });
     const content = await page.getTextContent();
 
     const tokens: TextToken[] = [];
@@ -73,8 +90,12 @@ export async function extractTextFromPdf(file: File): Promise<string> {
       });
     }
 
-    const lines = reconstructLines(tokens);
-    allLines.push(...lines);
+    // Split into columns if the page has a two-column layout
+    const columns = splitIntoColumns(tokens, viewport.width);
+    for (const colTokens of columns) {
+      const lines = tokensToLines(colTokens);
+      allLines.push(...lines);
+    }
   }
 
   return allLines.filter((l) => l.length > 0).join('\n');
