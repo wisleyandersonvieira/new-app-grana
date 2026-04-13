@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { formatCurrency } from '@/lib/financial';
+import { formatCurrency, formatCurrencyInput, parseCurrencyInput } from '@/lib/financial';
 import { importInvoicePdfPreview } from '@/lib/fatura-import/service';
 import type { ImportedInvoiceItem, SupportedBank } from '@/lib/fatura-import/types';
 import { ImportInvoiceReviewDialog } from '@/components/ImportInvoiceReviewDialog';
+import { normalizeStatementDescription } from '@/lib/fatura-import/normalization';
 
 type CartaoOption = { id: string; nome: string };
 type CategoriaOption = { id: string; nome: string };
@@ -20,8 +21,29 @@ type SubcategoriaOption = { id: string; nome: string; categoria_id: string };
 
 type ImportPreviewState = {
   banco: SupportedBank;
-  items: ImportedInvoiceItem[];
+  items: Array<ImportedInvoiceItem & { valor_input: string }>;
 };
+
+const toCompetenciaDate = (value: string) => `${value}-01`;
+
+const createEmptyPreviewItem = (banco: SupportedBank): ImportedInvoiceItem & { valor_input: string } => ({
+  descricao_original: '',
+  descricao_normalizada: '',
+  data_compra: null,
+  valor: 0,
+  valor_input: '',
+  parcelas: null,
+  banco_origem: banco,
+  observacao_parser: 'Linha adicionada manualmente',
+  categoria_id: null,
+  subcategoria_id: null,
+  categoria_sugerida_id: null,
+  subcategoria_sugerida_id: null,
+  sugestao_confianca: null,
+  sugestao_origem: null,
+  recorrente: false,
+  importado_pdf: true,
+});
 
 export default function ImportarFatura() {
   const { user } = useAuth();
@@ -91,6 +113,87 @@ export default function ImportarFatura() {
     });
   };
 
+  const updatePreviewDescription = (index: number, descricao: string) => {
+    setPreviewState((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.map((item, itemIndex) => (
+          itemIndex === index
+            ? {
+                ...item,
+                descricao_original: descricao,
+                descricao_normalizada: normalizeStatementDescription(descricao),
+              }
+            : item
+        )),
+      };
+    });
+  };
+
+  const updatePreviewPurchaseDate = (index: number, dataCompra: string) => {
+    setPreviewState((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.map((item, itemIndex) => (
+          itemIndex === index ? { ...item, data_compra: dataCompra || null } : item
+        )),
+      };
+    });
+  };
+
+  const updatePreviewInstallments = (index: number, parcelas: string) => {
+    setPreviewState((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.map((item, itemIndex) => (
+          itemIndex === index ? { ...item, parcelas: parcelas || null } : item
+        )),
+      };
+    });
+  };
+
+  const updatePreviewValue = (index: number, valor: string) => {
+    setPreviewState((current) => {
+      if (!current) return current;
+      const formattedValue = formatCurrencyInput(valor);
+      return {
+        ...current,
+        items: current.items.map((item, itemIndex) => (
+          itemIndex === index
+            ? {
+                ...item,
+                valor_input: formattedValue,
+                valor: parseCurrencyInput(formattedValue),
+              }
+            : item
+        )),
+      };
+    });
+  };
+
+  const addPreviewItem = () => {
+    setPreviewState((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: [...current.items, createEmptyPreviewItem(current.banco)],
+      };
+    });
+  };
+
+  const removePreviewItem = (index: number) => {
+    setPreviewState((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.filter((_, itemIndex) => itemIndex !== index),
+      };
+    });
+  };
+
   const updatePreviewSubcategory = (index: number, subcategoriaId: string) => {
     setPreviewState((current) => {
       if (!current) return current;
@@ -153,7 +256,13 @@ export default function ImportarFatura() {
         file,
       });
 
-      setPreviewState({ banco: preview.banco, items: preview.itens });
+      setPreviewState({
+        banco: preview.banco,
+        items: preview.itens.map((item) => ({
+          ...item,
+          valor_input: formatCurrencyInput(String(Math.round(item.valor * 100))),
+        })),
+      });
       setReviewOpen(true);
       toast.success(`${preview.itens.length} lançamentos analisados. Revise as categorias antes de concluir.`);
     } catch (error) {
@@ -183,8 +292,22 @@ export default function ImportarFatura() {
       const canImport = await ensureInvoiceDoesNotExist();
       if (!canImport) return;
 
-      const totalImportado = previewState.items.reduce((sum, item) => sum + item.valor, 0);
-      const sugestoesAplicadas = previewState.items.filter((item) => item.categoria_id && item.subcategoria_id).length;
+      const sanitizedItems = previewState.items
+        .map((item) => ({
+          ...item,
+          descricao_original: item.descricao_original?.trim() ?? '',
+          descricao_normalizada: normalizeStatementDescription(item.descricao_original ?? ''),
+          valor: parseCurrencyInput(item.valor_input ?? ''),
+        }))
+        .filter((item) => item.descricao_original && item.valor > 0);
+
+      if (sanitizedItems.length === 0) {
+        toast.error('Adicione ao menos uma linha válida para importar.');
+        return;
+      }
+
+      const totalImportado = sanitizedItems.reduce((sum, item) => sum + item.valor, 0);
+      const sugestoesAplicadas = sanitizedItems.filter((item) => item.categoria_id && item.subcategoria_id).length;
 
       const { data: fatura, error: faturaError } = await supabase
         .from('faturas_cartao')
@@ -202,7 +325,7 @@ export default function ImportarFatura() {
       if (faturaError || !fatura) throw faturaError ?? new Error('Não foi possível criar a fatura.');
       createdInvoiceId = fatura.id;
 
-      const rows = previewState.items.map((item) => ({
+      const rows = sanitizedItems.map((item) => ({
         fatura_id: fatura.id,
         usuario_id: user.id,
         descricao: item.descricao_original,
@@ -216,7 +339,7 @@ export default function ImportarFatura() {
         parcelas: item.parcelas,
         data: vencimento,
         data_compra: item.data_compra,
-        competencia,
+        competencia: toCompetenciaDate(competencia),
         banco_origem: item.banco_origem,
         observacao_parser: item.observacao_parser,
         sugestao_origem: item.sugestao_origem,
@@ -236,13 +359,13 @@ export default function ImportarFatura() {
         nome_arquivo: file.name,
         competencia,
         vencimento,
-        total_itens_extraidos: previewState.items.length,
+        total_itens_extraidos: sanitizedItems.length,
         total_importado: totalImportado,
         itens_sugeridos: sugestoesAplicadas,
         status: 'sucesso',
       });
 
-      toast.success(`Fatura importada com sucesso. ${previewState.items.length} lançamentos revisados.`);
+      toast.success(`Fatura importada com sucesso. ${sanitizedItems.length} lançamentos revisados.`);
       resetPreview();
       navigate(`/fatura/${fatura.id}`);
     } catch (error) {
@@ -429,8 +552,14 @@ export default function ImportarFatura() {
           if (!open) resetPreview();
           else setReviewOpen(true);
         }}
+        onDescriptionChange={updatePreviewDescription}
+        onPurchaseDateChange={updatePreviewPurchaseDate}
+        onInstallmentsChange={updatePreviewInstallments}
+        onValueChange={updatePreviewValue}
         onCategoryChange={updatePreviewCategory}
         onSubcategoryChange={updatePreviewSubcategory}
+        onAddItem={addPreviewItem}
+        onRemoveItem={removePreviewItem}
         onConfirm={handleConfirmImport}
       />
     </>

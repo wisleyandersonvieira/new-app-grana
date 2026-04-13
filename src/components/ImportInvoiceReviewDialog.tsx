@@ -1,11 +1,11 @@
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -15,19 +15,26 @@ import type { ImportedInvoiceItem, SupportedBank } from '@/lib/fatura-import/typ
 
 type CategoriaOption = { id: string; nome: string };
 type SubcategoriaOption = { id: string; nome: string; categoria_id: string };
+type ReviewInvoiceItem = ImportedInvoiceItem & { valor_input?: string };
 
 interface ImportInvoiceReviewDialogProps {
   open: boolean;
   banco: SupportedBank | null;
   competencia: string;
   vencimento: string;
-  items: ImportedInvoiceItem[];
+  items: ReviewInvoiceItem[];
   categories: CategoriaOption[];
   subcategories: SubcategoriaOption[];
   loading: boolean;
   onOpenChange: (open: boolean) => void;
+  onDescriptionChange: (index: number, descricao: string) => void;
+  onPurchaseDateChange: (index: number, dataCompra: string) => void;
+  onInstallmentsChange: (index: number, parcelas: string) => void;
+  onValueChange: (index: number, valor: string) => void;
   onCategoryChange: (index: number, categoriaId: string) => void;
   onSubcategoryChange: (index: number, subcategoriaId: string) => void;
+  onAddItem: () => void;
+  onRemoveItem: (index: number) => void;
   onConfirm: () => void;
 }
 
@@ -41,8 +48,14 @@ export function ImportInvoiceReviewDialog({
   subcategories,
   loading,
   onOpenChange,
+  onDescriptionChange,
+  onPurchaseDateChange,
+  onInstallmentsChange,
+  onValueChange,
   onCategoryChange,
   onSubcategoryChange,
+  onAddItem,
+  onRemoveItem,
   onConfirm,
 }: ImportInvoiceReviewDialogProps) {
   const total = items.reduce((sum, item) => sum + item.valor, 0);
@@ -58,25 +71,33 @@ export function ImportInvoiceReviewDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          {banco && <Badge variant="outline">Banco: {banco.toUpperCase()}</Badge>}
-          <Badge variant="outline">Competência: {competencia}</Badge>
-          <Badge variant="outline">Vencimento: {vencimento}</Badge>
-          <Badge variant="outline">Lançamentos: {items.length}</Badge>
-          <Badge variant="outline">Total: {formatCurrency(total)}</Badge>
-          {pendingCount > 0 && <Badge variant="outline">Pendentes: {pendingCount}</Badge>}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            {banco && <Badge variant="outline">Banco: {banco.toUpperCase()}</Badge>}
+            <Badge variant="outline">Competência: {competencia}</Badge>
+            <Badge variant="outline">Vencimento: {vencimento}</Badge>
+            <Badge variant="outline">Lançamentos: {items.length}</Badge>
+            <Badge variant="outline">Total: {formatCurrency(total)}</Badge>
+            {pendingCount > 0 && <Badge variant="outline">Pendentes: {pendingCount}</Badge>}
+          </div>
+
+          <Button type="button" variant="outline" onClick={onAddItem} disabled={loading}>
+            <Plus className="mr-2 h-4 w-4" />
+            Adicionar linha
+          </Button>
         </div>
 
         <div className="max-h-[60vh] overflow-auto rounded-lg border border-border">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[1240px] text-sm">
             <thead className="sticky top-0 bg-background">
               <tr className="border-b text-left">
-                <th className="px-3 py-2">Descrição</th>
+                <th className="px-3 py-2">Histórico</th>
                 <th className="px-3 py-2">Compra</th>
                 <th className="px-3 py-2">Parcelas</th>
                 <th className="px-3 py-2">Valor</th>
                 <th className="px-3 py-2">Categoria</th>
                 <th className="px-3 py-2">Subcategoria</th>
+                <th className="px-3 py-2 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -88,7 +109,12 @@ export function ImportInvoiceReviewDialog({
                   <tr key={`${item.descricao_normalizada}-${index}`} className={needsReview ? 'border-b bg-muted/40 align-top' : 'border-b align-top'}>
                     <td className="px-3 py-3">
                       <div className="space-y-1">
-                        <p className="font-medium text-foreground">{item.descricao_original}</p>
+                        <Input
+                          value={item.descricao_original ?? ''}
+                          onChange={(event) => onDescriptionChange(index, event.target.value)}
+                          placeholder="Descreva o lançamento"
+                          disabled={loading}
+                        />
                         <div className="flex flex-wrap gap-2">
                           {item.sugestao_origem && <Badge variant="outline">Sugestão</Badge>}
                           {item.recorrente && <Badge variant="outline">Recorrente</Badge>}
@@ -96,9 +122,31 @@ export function ImportInvoiceReviewDialog({
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-muted-foreground">{item.data_compra ?? '—'}</td>
-                    <td className="px-3 py-3 text-muted-foreground">{item.parcelas ?? '—'}</td>
-                    <td className="px-3 py-3 font-medium">{formatCurrency(item.valor)}</td>
+                    <td className="px-3 py-3">
+                      <Input
+                        type="date"
+                        value={item.data_compra ?? ''}
+                        onChange={(event) => onPurchaseDateChange(index, event.target.value)}
+                        disabled={loading}
+                      />
+                    </td>
+                    <td className="px-3 py-3">
+                      <Input
+                        value={item.parcelas ?? ''}
+                        onChange={(event) => onInstallmentsChange(index, event.target.value)}
+                        placeholder="Ex.: 1/3"
+                        disabled={loading}
+                      />
+                    </td>
+                    <td className="px-3 py-3">
+                      <Input
+                        inputMode="decimal"
+                        value={item.valor_input ?? ''}
+                        onChange={(event) => onValueChange(index, event.target.value)}
+                        placeholder="0,00"
+                        disabled={loading}
+                      />
+                    </td>
                     <td className="px-3 py-3">
                       <Select value={item.categoria_id ?? ''} onValueChange={(value) => onCategoryChange(index, value)}>
                         <SelectTrigger className="h-9 w-[180px]">
@@ -131,6 +179,18 @@ export function ImportInvoiceReviewDialog({
                         </SelectContent>
                       </Select>
                     </td>
+                    <td className="px-3 py-3 text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-9 w-9 p-0"
+                        onClick={() => onRemoveItem(index)}
+                        disabled={loading}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Excluir linha</span>
+                      </Button>
+                    </td>
                   </tr>
                 );
               })}
@@ -138,7 +198,7 @@ export function ImportInvoiceReviewDialog({
           </table>
         </div>
 
-        <DialogFooter>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             Cancelar
           </Button>
@@ -146,7 +206,7 @@ export function ImportInvoiceReviewDialog({
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Confirmar importação
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
