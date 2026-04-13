@@ -8,7 +8,7 @@ async function inflatePdfStream(bytes: Uint8Array): Promise<string> {
   // Try both zlib-wrapped deflate (most common) and raw deflate (some PDF generators).
   for (const format of ['deflate', 'deflate-raw'] as const) {
     try {
-      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+      const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream(format));
       const text = await new Response(stream).text();
       if (text.length > 0) return text;
     } catch {

@@ -377,42 +377,6 @@ export type Database = {
         }
         Relationships: []
       }
-      contas: {
-        Row: {
-          bloqueada: boolean | null
-          created_at: string | null
-          data_saldo_inicial: string | null
-          id: string
-          nome: string
-          saldo_inicial: number | null
-          tipo: string
-          updated_at: string | null
-          usuario_id: string
-        }
-        Insert: {
-          bloqueada?: boolean | null
-          created_at?: string | null
-          data_saldo_inicial?: string | null
-          id?: string
-          nome: string
-          saldo_inicial?: number | null
-          tipo?: string
-          updated_at?: string | null
-          usuario_id: string
-        }
-        Update: {
-          bloqueada?: boolean | null
-          created_at?: string | null
-          data_saldo_inicial?: string | null
-          id?: string
-          nome?: string
-          saldo_inicial?: number | null
-          tipo?: string
-          updated_at?: string | null
-          usuario_id?: string
-        }
-        Relationships: []
-      }
       categorias_sugeridas_cartao: {
         Row: {
           atualizado_em: string
@@ -479,6 +443,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      contas: {
+        Row: {
+          bloqueada: boolean | null
+          created_at: string | null
+          data_saldo_inicial: string | null
+          id: string
+          nome: string
+          saldo_inicial: number | null
+          tipo: string
+          updated_at: string | null
+          usuario_id: string
+        }
+        Insert: {
+          bloqueada?: boolean | null
+          created_at?: string | null
+          data_saldo_inicial?: string | null
+          id?: string
+          nome: string
+          saldo_inicial?: number | null
+          tipo?: string
+          updated_at?: string | null
+          usuario_id: string
+        }
+        Update: {
+          bloqueada?: boolean | null
+          created_at?: string | null
+          data_saldo_inicial?: string | null
+          id?: string
+          nome?: string
+          saldo_inicial?: number | null
+          tipo?: string
+          updated_at?: string | null
+          usuario_id?: string
+        }
+        Relationships: []
       }
       despesas: {
         Row: {
@@ -618,6 +618,75 @@ export type Database = {
           },
         ]
       }
+      importacoes_fatura_pdf: {
+        Row: {
+          atualizado_em: string
+          banco_origem: string | null
+          cartao_id: string
+          competencia: string
+          criado_em: string
+          fatura_id: string | null
+          id: string
+          itens_sugeridos: number
+          mensagem_erro: string | null
+          nome_arquivo: string
+          status: string
+          total_importado: number
+          total_itens_extraidos: number
+          usuario_id: string
+          vencimento: string
+        }
+        Insert: {
+          atualizado_em?: string
+          banco_origem?: string | null
+          cartao_id: string
+          competencia: string
+          criado_em?: string
+          fatura_id?: string | null
+          id?: string
+          itens_sugeridos?: number
+          mensagem_erro?: string | null
+          nome_arquivo: string
+          status?: string
+          total_importado?: number
+          total_itens_extraidos?: number
+          usuario_id: string
+          vencimento: string
+        }
+        Update: {
+          atualizado_em?: string
+          banco_origem?: string | null
+          cartao_id?: string
+          competencia?: string
+          criado_em?: string
+          fatura_id?: string | null
+          id?: string
+          itens_sugeridos?: number
+          mensagem_erro?: string | null
+          nome_arquivo?: string
+          status?: string
+          total_importado?: number
+          total_itens_extraidos?: number
+          usuario_id?: string
+          vencimento?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "importacoes_fatura_pdf_cartao_id_fkey"
+            columns: ["cartao_id"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "importacoes_fatura_pdf_fatura_id_fkey"
+            columns: ["fatura_id"]
+            isOneToOne: false
+            referencedRelation: "faturas_cartao"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       itens_fatura: {
         Row: {
           banco_origem: string | null
@@ -734,75 +803,6 @@ export type Database = {
             columns: ["subcategoria_sugerida_id"]
             isOneToOne: false
             referencedRelation: "subcategorias"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      importacoes_fatura_pdf: {
-        Row: {
-          atualizado_em: string
-          banco_origem: string | null
-          cartao_id: string
-          competencia: string
-          criado_em: string
-          fatura_id: string | null
-          id: string
-          itens_sugeridos: number
-          mensagem_erro: string | null
-          nome_arquivo: string
-          status: string
-          total_importado: number
-          total_itens_extraidos: number
-          usuario_id: string
-          vencimento: string
-        }
-        Insert: {
-          atualizado_em?: string
-          banco_origem?: string | null
-          cartao_id: string
-          competencia: string
-          criado_em?: string
-          fatura_id?: string | null
-          id?: string
-          itens_sugeridos?: number
-          mensagem_erro?: string | null
-          nome_arquivo: string
-          status?: string
-          total_importado?: number
-          total_itens_extraidos?: number
-          usuario_id: string
-          vencimento: string
-        }
-        Update: {
-          atualizado_em?: string
-          banco_origem?: string | null
-          cartao_id?: string
-          competencia?: string
-          criado_em?: string
-          fatura_id?: string | null
-          id?: string
-          itens_sugeridos?: number
-          mensagem_erro?: string | null
-          nome_arquivo?: string
-          status?: string
-          total_importado?: number
-          total_itens_extraidos?: number
-          usuario_id?: string
-          vencimento?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "importacoes_fatura_pdf_cartao_id_fkey"
-            columns: ["cartao_id"]
-            isOneToOne: false
-            referencedRelation: "contas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "importacoes_fatura_pdf_fatura_id_fkey"
-            columns: ["fatura_id"]
-            isOneToOne: false
-            referencedRelation: "faturas_cartao"
             referencedColumns: ["id"]
           },
         ]
