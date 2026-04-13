@@ -66,6 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error } = await supabase.functions.invoke('check-subscription');
       if (error) {
+        // If unauthorized, session is invalid - don't log as error
+        if (error.message?.includes('non-2xx')) {
+          return;
+        }
         console.error('Error checking subscription:', error);
         return;
       }
