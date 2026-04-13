@@ -94,12 +94,6 @@ export class SicoobParser extends BaseStatementParser {
       // Skip noise
       if (isSicoobNoise(line)) { i++; continue; }
 
-      // Skip cardholder name lines (e.g., "JESSICA L R S VIEIRA 5468")
-      if (/^[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ\s]{8,}\s*\d{0,4}$/.test(line) && !DATE_START.test(line)) {
-        i++;
-        continue;
-      }
-
       const dateMatch = line.match(DATE_START);
       if (!dateMatch) {
         // Check if this is a description continuation that belongs to the NEXT date line
@@ -107,7 +101,7 @@ export class SicoobParser extends BaseStatementParser {
         if (i + 1 < allLines.length) {
           const nextLine = allLines[i + 1];
           const nextDate = nextLine.match(DATE_START);
-          if (nextDate && RS_AMOUNT.test(nextLine) && !isSicoobNoise(line)) {
+          if (nextDate && RS_AMOUNT.test(nextLine)) {
             // This line is a prefix description for the next line
             const parsed = this.parseTransactionCluster(line, allLines, i + 1, context);
             if (parsed) {
@@ -117,6 +111,8 @@ export class SicoobParser extends BaseStatementParser {
             }
           }
         }
+
+        // Skip cardholder name lines (e.g., "JESSICA L R S VIEIRA 5468")
         i++;
         continue;
       }
