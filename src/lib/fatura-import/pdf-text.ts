@@ -14,13 +14,39 @@ type TextToken = { x: number; y: number; str: string; width: number };
 function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][] {
   if (tokens.length === 0) return [[]];
 
-  // Collect all X positions to find the column gap
-  const xPositions = tokens.map((t) => t.x).sort((a, b) => a - b);
   const midpoint = pageWidth / 2;
+  const Y_TOL = 3;
 
-  // Check if there are tokens on both sides of the midpoint
-  const leftTokens = tokens.filter((t) => t.x < midpoint - 10);
-  const rightTokens = tokens.filter((t) => t.x >= midpoint - 10);
+  // Group tokens into rows by Y proximity
+  const sorted = [...tokens].sort((a, b) => b.y - a.y);
+  const rows: TextToken[][] = [];
+  let curRow: TextToken[] = [sorted[0]];
+  let curY = sorted[0].y;
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (Math.abs(sorted[i].y - curY) <= Y_TOL) {
+      curRow.push(sorted[i]);
+    } else {
+      rows.push(curRow);
+      curRow = [sorted[i]];
+      curY = sorted[i].y;
+    }
+  }
+  rows.push(curRow);
+
+  // Assign each ROW to a column based on its leftmost token.
+  // This keeps wide lines (e.g. international transactions with R$ far right) intact.
+  const leftTokens: TextToken[] = [];
+  const rightTokens: TextToken[] = [];
+
+  for (const row of rows) {
+    const minX = Math.min(...row.map((t) => t.x));
+    if (minX < midpoint - 10) {
+      leftTokens.push(...row);
+    } else {
+      rightTokens.push(...row);
+    }
+  }
 
   // Only split if both sides have a reasonable number of tokens
   if (leftTokens.length > 5 && rightTokens.length > 5) {
