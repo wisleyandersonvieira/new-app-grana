@@ -127,30 +127,36 @@ export default function NovaDespesaPage() {
   const loadUltimaDespesa = useCallback(async () => {
     if (!user) return;
 
-    const { data, error } = await supabase
-      .from('despesas')
-      .select('descricao, valor, data, paga, parcela, created_at, categorias(nome)')
-      .eq('usuario_id', user.id)
-      .order('created_at', { ascending: false })
-      .order('parcela', { ascending: false })
-      .limit(1);
+    try {
+      const { data, error } = await supabase
+        .from('despesas')
+        .select('descricao, valor, data, paga, parcela, created_at, categorias:categoria_id(nome)')
+        .eq('usuario_id', user.id)
+        .order('created_at', { ascending: false })
+        .order('parcela', { ascending: false })
+        .limit(1);
 
-    if (error) throw error;
+      if (error) {
+        console.error('Erro ao carregar última despesa:', error);
+        return;
+      }
 
-    const lastExpense = data?.[0] as UltimaDespesaQueryRow | undefined;
+      const lastExpense = data?.[0] as UltimaDespesaQueryRow | undefined;
 
-    if (lastExpense) {
-      setUltimaDespesa({
-        descricao: lastExpense.descricao,
-        valor: lastExpense.valor,
-        data: lastExpense.data,
-        categoria_nome: lastExpense.categorias?.nome || null,
-        paga: Boolean(lastExpense.paga),
-      });
-      return;
+      if (lastExpense) {
+        setUltimaDespesa({
+          descricao: lastExpense.descricao,
+          valor: lastExpense.valor,
+          data: lastExpense.data,
+          categoria_nome: lastExpense.categorias?.nome || null,
+          paga: Boolean(lastExpense.paga),
+        });
+      } else {
+        setUltimaDespesa(null);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar última despesa:', err);
     }
-
-    setUltimaDespesa(null);
   }, [user]);
 
   const loadReferenceData = useCallback(async () => {
