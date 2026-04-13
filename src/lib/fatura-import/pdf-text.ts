@@ -5,13 +5,18 @@ async function inflatePdfStream(bytes: Uint8Array): Promise<string> {
     return decoder.decode(bytes);
   }
 
-  try {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
-    const response = new Response(stream);
-    return await response.text();
-  } catch {
-    return decoder.decode(bytes);
+  // Try both zlib-wrapped deflate (most common) and raw deflate (some PDF generators).
+  for (const format of ['deflate', 'deflate-raw'] as const) {
+    try {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+      const text = await new Response(stream).text();
+      if (text.length > 0) return text;
+    } catch {
+      // continue to next format
+    }
   }
+
+  return decoder.decode(bytes);
 }
 
 function decodePdfLiteralString(value: string): string {
@@ -40,9 +45,17 @@ function extractTextOperators(content: string): string[] {
       if (piece.startsWith('(')) {
         strings.push(decodePdfLiteralString(piece.slice(1, -1)));
       } else {
-        const hex = piece.slice(1, -1).replace(/\s+/g, '');
-        if (hex.length >= 2) {
-          strings.push(new TextDecoder().decode(Uint8Array.from(hex.match(/.{1,2}/g)?.map((p) => parseInt(p, 16)) ?? [])));
+        const hexStr = piece.slice(1, -1).replace(/\s+/g, '');
+        if (hexStr.length >= 2) {
+          const bytes = Uint8Array.from(hexStr.match(/.{1,2}/g)!.map((p) => parseInt(p, 16)));
+          // Heuristic: if even-indexed bytes are mostly 0x00, this is a CIDFont with
+          // 2-byte character codes stored as UTF-16BE (common in Brazilian bank PDFs).
+          // Processing these as single-byte UTF-8 produces null-byte-polluted garbage.
+          const isUtf16Be =
+            bytes.length >= 4 &&
+            bytes.length % 2 === 0 &&
+            bytes.filter((b, i) => i % 2 === 0 && b === 0).length >= bytes.length / 4;
+          strings.push(new TextDecoder(isUtf16Be ? 'utf-16be' : 'utf-8').decode(bytes));
         }
       }
     }
@@ -53,6 +66,7 @@ function extractTextOperators(content: string): string[] {
 
 function sanitizePdfText(text: string): string {
   return text
+    .replace(/\x00/g, '')          // strip null bytes left by partially-decoded UTF-16BE
     .replace(/\r/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
