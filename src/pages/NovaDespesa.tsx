@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +20,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { CalendarIcon, TrendingDown, Save, CheckCircle, FlaskConical } from 'lucide-react';
-import { format, addMonths } from 'date-fns';
+import { format, addMonths, isValid, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -55,6 +56,40 @@ interface UltimaDespesa {
   valor: number;
   data: string;
   categoria_nome: string | null;
+  paga: boolean;
+}
+
+type DespesaRow = Database['public']['Tables']['despesas']['Row'];
+
+interface UltimaDespesaQueryRow extends Pick<DespesaRow, 'descricao' | 'valor' | 'data' | 'paga' | 'parcela' | 'created_at'> {
+  categorias: { nome: string } | null;
+}
+
+function formatDateToDisplay(date: Date) {
+  return format(date, 'dd-MM-yyyy');
+}
+
+function formatIsoDateToDisplay(date: string | null) {
+  if (!date) return '—';
+
+  const parsedDate = parse(date, 'yyyy-MM-dd', new Date());
+  return isValid(parsedDate) ? formatDateToDisplay(parsedDate) : date;
+}
+
+function parseManualDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+
+  return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
+}
+
+function getDateFromInput(value: string) {
+  if (value.length !== 10) return undefined;
+
+  const parsedDate = parse(value, 'dd-MM-yyyy', new Date());
+  return isValid(parsedDate) ? parsedDate : undefined;
 }
 
 export default function NovaDespesaPage() {
@@ -66,6 +101,7 @@ export default function NovaDespesaPage() {
   const [descricao, setDescricao] = useState('');
   const [valorDisplay, setValorDisplay] = useState('');
   const [dataVencimento, setDataVencimento] = useState<Date | undefined>(undefined);
+  const [dataVencimentoInput, setDataVencimentoInput] = useState('');
   const [compMes, setCompMes] = useState(String(new Date().getMonth() + 1));
   const [compAno, setCompAno] = useState(String(new Date().getFullYear()));
   const [contaId, setContaId] = useState('');
@@ -88,35 +124,58 @@ export default function NovaDespesaPage() {
   );
 
   // Load reference data
-  useEffect(() => {
+  const loadUltimaDespesa = useCallback(async () => {
     if (!user) return;
-    loadReferenceData();
+
+    const { data, error } = await supabase
+      .from('despesas')
+      .select('descricao, valor, data, paga, parcela, created_at, categorias(nome)')
+      .eq('usuario_id', user.id)
+      .order('created_at', { ascending: false })
+      .order('parcela', { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+
+    const lastExpense = data?.[0] as UltimaDespesaQueryRow | undefined;
+
+    if (lastExpense) {
+      setUltimaDespesa({
+        descricao: lastExpense.descricao,
+        valor: lastExpense.valor,
+        data: lastExpense.data,
+        categoria_nome: lastExpense.categorias?.nome || null,
+        paga: Boolean(lastExpense.paga),
+      });
+      return;
+    }
+
+    setUltimaDespesa(null);
   }, [user]);
 
-  async function loadReferenceData() {
-    const [catRes, subRes, contRes, bloqRes, ultRes] = await Promise.all([
+  const loadReferenceData = useCallback(async () => {
+    const [catRes, subRes, contRes, bloqRes] = await Promise.all([
       supabase.from('categorias').select('id, nome').eq('bloqueada', false).order('nome'),
       supabase.from('subcategorias').select('id, nome, categoria_id').eq('bloqueada', false).order('nome'),
       supabase.from('contas').select('id, nome, data_saldo_inicial').eq('tipo', 'conta').eq('bloqueada', false).order('nome'),
       supabase.from('bloqueios').select('mes_ano').eq('tipo', 'competencia'),
-      supabase.from('despesas').select('descricao, valor, data, categoria_id, categorias(nome)').order('created_at', { ascending: false }).limit(1),
     ]);
 
     setCategorias(catRes.data || []);
     setSubcategorias(subRes.data || []);
     setContas(contRes.data || []);
     setBloqueios((bloqRes.data || []).map((b) => b.mes_ano));
+    await loadUltimaDespesa();
+  }, [loadUltimaDespesa]);
 
-    if (ultRes.data && ultRes.data.length > 0) {
-      const d = ultRes.data[0] as any;
-      setUltimaDespesa({
-        descricao: d.descricao,
-        valor: d.valor,
-        data: d.data,
-        categoria_nome: d.categorias?.nome || null,
-      });
-    }
-  }
+  useEffect(() => {
+    if (!user) return;
+    void loadReferenceData();
+  }, [user, loadReferenceData]);
+
+  useEffect(() => {
+    setDataVencimentoInput(dataVencimento ? formatDateToDisplay(dataVencimento) : '');
+  }, [dataVencimento]);
 
   // Generate parcelas simulation
   function simularParcelas() {
@@ -157,7 +216,7 @@ export default function NovaDespesaPage() {
     setShowParcelas(true);
   }
 
-  function updateParcela(index: number, field: keyof ParcelaRow, value: any) {
+  function updateParcela<K extends keyof ParcelaRow>(index: number, field: K, value: ParcelaRow[K]) {
     setParcelas((prev) => {
       const copy = [...prev];
       copy[index] = { ...copy[index], [field]: value };
@@ -251,28 +310,15 @@ export default function NovaDespesaPage() {
       setDescricao('');
       setValorDisplay('');
       setDataVencimento(undefined);
+      setDataVencimentoInput('');
       setNumParcelas('1');
       setParcelas([]);
       setShowParcelas(false);
 
-      // Reload last despesa
-      const { data } = await supabase
-        .from('despesas')
-        .select('descricao, valor, data, categoria_id, categorias(nome)')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (data && data.length > 0) {
-        const d = data[0] as any;
-        setUltimaDespesa({
-          descricao: d.descricao,
-          valor: d.valor,
-          data: d.data,
-          categoria_nome: d.categorias?.nome || null,
-        });
-      }
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao salvar despesa.');
+      await loadUltimaDespesa();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro ao salvar despesa.';
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -358,32 +404,48 @@ export default function NovaDespesaPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Data de Vencimento *</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          'w-full justify-start text-left font-normal',
-                          !dataVencimento && 'text-muted-foreground'
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {dataVencimento
-                          ? format(dataVencimento, 'dd/MM/yyyy')
-                          : 'Selecione a data'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={dataVencimento}
-                        onSelect={setDataVencimento}
-                        locale={ptBR}
-                        initialFocus
-                        className="p-3 pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <div className="flex gap-2">
+                    <Input
+                      value={dataVencimentoInput}
+                      onChange={(e) => {
+                        const formattedValue = parseManualDateInput(e.target.value);
+                        setDataVencimentoInput(formattedValue);
+
+                        const parsedDate = getDateFromInput(formattedValue);
+                        if (parsedDate) {
+                          setDataVencimento(parsedDate);
+                        } else {
+                          setDataVencimento(undefined);
+                        }
+                      }}
+                      placeholder="DD-MM-AAAA"
+                      inputMode="numeric"
+                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className={cn(
+                            'shrink-0',
+                            !dataVencimento && 'text-muted-foreground'
+                          )}
+                        >
+                          <CalendarIcon className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="end">
+                        <Calendar
+                          mode="single"
+                          selected={dataVencimento}
+                          onSelect={setDataVencimento}
+                          locale={ptBR}
+                          initialFocus
+                          className="p-3 pointer-events-auto"
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
               </div>
 
@@ -518,7 +580,7 @@ export default function NovaDespesaPage() {
                               <PopoverTrigger asChild>
                                 <Button variant="outline" className="h-8 w-32 text-xs justify-start">
                                   <CalendarIcon className="mr-1 h-3 w-3" />
-                                  {format(p.vencimento, 'dd/MM/yyyy')}
+                                  {formatDateToDisplay(p.vencimento)}
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0" align="start">
@@ -589,7 +651,11 @@ export default function NovaDespesaPage() {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Data:</span>{' '}
-                    <span className="font-medium">{ultimaDespesa.data}</span>
+                    <span className="font-medium">{formatIsoDateToDisplay(ultimaDespesa.data)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Status:</span>{' '}
+                    <span className="font-medium">{ultimaDespesa.paga ? 'Paga' : 'Pendente'}</span>
                   </div>
                 </div>
               ) : (
