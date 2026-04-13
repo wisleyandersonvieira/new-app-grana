@@ -52,9 +52,14 @@ export default function Faturas() {
           <h1 className="text-2xl font-bold tracking-tight">Faturas</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Gerencie faturas dos cartões de crédito</p>
         </div>
-        <Button onClick={() => navigate('/nova-fatura')} className="gap-2">
-          <Plus className="h-4 w-4" /> Nova Fatura
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate('/importar-fatura')} className="gap-2">
+            Importar PDF
+          </Button>
+          <Button onClick={() => navigate('/nova-fatura')} className="gap-2">
+            <Plus className="h-4 w-4" /> Nova Fatura
+          </Button>
+        </div>
       </div>
 
       <Card>

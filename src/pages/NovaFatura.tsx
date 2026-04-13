@@ -52,7 +52,10 @@ export default function NovaFatura() {
           <h1 className="text-2xl font-bold">Nova Fatura</h1>
           <p className="text-muted-foreground">Cadastre uma nova fatura de cartão</p>
         </div>
-        <Button variant="outline" onClick={() => navigate('/faturas')}>Ver Faturas</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate('/importar-fatura')}>Importar PDF</Button>
+          <Button variant="outline" onClick={() => navigate('/faturas')}>Ver Faturas</Button>
+        </div>
       </div>
       <Card>
         <CardHeader>

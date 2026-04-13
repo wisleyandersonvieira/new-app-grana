@@ -25,6 +25,7 @@ import CadastrarMetas from "./pages/CadastrarMetas";
 import Faturas from "./pages/Faturas";
 import NovaFatura from "./pages/NovaFatura";
 import FaturaDetalhe from "./pages/FaturaDetalhe";
+import ImportarFatura from "./pages/ImportarFatura";
 import Transferencias from "./pages/Transferencias";
 import NovaTransferencia from "./pages/NovaTransferencia";
 import Bloqueios from "./pages/Bloqueios";
@@ -77,6 +78,7 @@ const App = () => (
                       <Route path="/metas/acompanhar" element={<Metas />} />
                       <Route path="/faturas" element={<Faturas />} />
                       <Route path="/nova-fatura" element={<NovaFatura />} />
+                      <Route path="/importar-fatura" element={<ImportarFatura />} />
                       <Route path="/fatura/:id" element={<FaturaDetalhe />} />
                       <Route path="/transferencias" element={<Transferencias />} />
                       <Route path="/nova-transferencia" element={<NovaTransferencia />} />

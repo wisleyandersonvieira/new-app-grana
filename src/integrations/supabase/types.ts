@@ -413,6 +413,73 @@ export type Database = {
         }
         Relationships: []
       }
+      categorias_sugeridas_cartao: {
+        Row: {
+          atualizado_em: string
+          cartao_id: string
+          categoria: string | null
+          categoria_id: string | null
+          criado_em: string
+          descricao_normalizada: string
+          id: string
+          quantidade_uso: number
+          recorrente: boolean
+          subcategoria_id: string | null
+          ultima_data_uso: string | null
+          usuario_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          cartao_id: string
+          categoria?: string | null
+          categoria_id?: string | null
+          criado_em?: string
+          descricao_normalizada: string
+          id?: string
+          quantidade_uso?: number
+          recorrente?: boolean
+          subcategoria_id?: string | null
+          ultima_data_uso?: string | null
+          usuario_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          cartao_id?: string
+          categoria?: string | null
+          categoria_id?: string | null
+          criado_em?: string
+          descricao_normalizada?: string
+          id?: string
+          quantidade_uso?: number
+          recorrente?: boolean
+          subcategoria_id?: string | null
+          ultima_data_uso?: string | null
+          usuario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "categorias_sugeridas_cartao_cartao_id_fkey"
+            columns: ["cartao_id"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "categorias_sugeridas_cartao_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "categorias_sugeridas_cartao_subcategoria_id_fkey"
+            columns: ["subcategoria_id"]
+            isOneToOne: false
+            referencedRelation: "subcategorias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       despesas: {
         Row: {
           categoria_id: string | null
@@ -553,44 +620,83 @@ export type Database = {
       }
       itens_fatura: {
         Row: {
+          banco_origem: string | null
           categoria_id: string | null
+          categoria_sugerida_id: string | null
           competencia: string | null
           created_at: string | null
           data: string | null
+          data_compra: string | null
           descricao: string
+          descricao_normalizada: string | null
+          descricao_original: string | null
           fatura_id: string
           id: string
+          importado_pdf: boolean
+          observacao_parser: string | null
           parcela_atual: number | null
+          parcelas: string | null
+          recorrente: boolean
           subcategoria_id: string | null
+          subcategoria_sugerida_id: string | null
+          sugestao_confianca: number | null
+          sugestao_origem: string | null
           total_parcelas: number | null
+          updated_at: string | null
           usuario_id: string
           valor: number
         }
         Insert: {
+          banco_origem?: string | null
           categoria_id?: string | null
+          categoria_sugerida_id?: string | null
           competencia?: string | null
           created_at?: string | null
           data?: string | null
+          data_compra?: string | null
           descricao: string
+          descricao_normalizada?: string | null
+          descricao_original?: string | null
           fatura_id: string
           id?: string
+          importado_pdf?: boolean
+          observacao_parser?: string | null
           parcela_atual?: number | null
+          parcelas?: string | null
+          recorrente?: boolean
           subcategoria_id?: string | null
+          subcategoria_sugerida_id?: string | null
+          sugestao_confianca?: number | null
+          sugestao_origem?: string | null
           total_parcelas?: number | null
+          updated_at?: string | null
           usuario_id: string
           valor: number
         }
         Update: {
+          banco_origem?: string | null
           categoria_id?: string | null
+          categoria_sugerida_id?: string | null
           competencia?: string | null
           created_at?: string | null
           data?: string | null
+          data_compra?: string | null
           descricao?: string
+          descricao_normalizada?: string | null
+          descricao_original?: string | null
           fatura_id?: string
           id?: string
+          importado_pdf?: boolean
+          observacao_parser?: string | null
           parcela_atual?: number | null
+          parcelas?: string | null
+          recorrente?: boolean
           subcategoria_id?: string | null
+          subcategoria_sugerida_id?: string | null
+          sugestao_confianca?: number | null
+          sugestao_origem?: string | null
           total_parcelas?: number | null
+          updated_at?: string | null
           usuario_id?: string
           valor?: number
         }
@@ -598,6 +704,13 @@ export type Database = {
           {
             foreignKeyName: "itens_fatura_categoria_id_fkey"
             columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "itens_fatura_categoria_sugerida_id_fkey"
+            columns: ["categoria_sugerida_id"]
             isOneToOne: false
             referencedRelation: "categorias"
             referencedColumns: ["id"]
@@ -614,6 +727,82 @@ export type Database = {
             columns: ["subcategoria_id"]
             isOneToOne: false
             referencedRelation: "subcategorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "itens_fatura_subcategoria_sugerida_id_fkey"
+            columns: ["subcategoria_sugerida_id"]
+            isOneToOne: false
+            referencedRelation: "subcategorias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      importacoes_fatura_pdf: {
+        Row: {
+          atualizado_em: string
+          banco_origem: string | null
+          cartao_id: string
+          competencia: string
+          criado_em: string
+          fatura_id: string | null
+          id: string
+          itens_sugeridos: number
+          mensagem_erro: string | null
+          nome_arquivo: string
+          status: string
+          total_importado: number
+          total_itens_extraidos: number
+          usuario_id: string
+          vencimento: string
+        }
+        Insert: {
+          atualizado_em?: string
+          banco_origem?: string | null
+          cartao_id: string
+          competencia: string
+          criado_em?: string
+          fatura_id?: string | null
+          id?: string
+          itens_sugeridos?: number
+          mensagem_erro?: string | null
+          nome_arquivo: string
+          status?: string
+          total_importado?: number
+          total_itens_extraidos?: number
+          usuario_id: string
+          vencimento: string
+        }
+        Update: {
+          atualizado_em?: string
+          banco_origem?: string | null
+          cartao_id?: string
+          competencia?: string
+          criado_em?: string
+          fatura_id?: string | null
+          id?: string
+          itens_sugeridos?: number
+          mensagem_erro?: string | null
+          nome_arquivo?: string
+          status?: string
+          total_importado?: number
+          total_itens_extraidos?: number
+          usuario_id?: string
+          vencimento?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "importacoes_fatura_pdf_cartao_id_fkey"
+            columns: ["cartao_id"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "importacoes_fatura_pdf_fatura_id_fkey"
+            columns: ["fatura_id"]
+            isOneToOne: false
+            referencedRelation: "faturas_cartao"
             referencedColumns: ["id"]
           },
         ]

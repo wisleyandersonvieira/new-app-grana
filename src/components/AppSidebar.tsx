@@ -38,6 +38,7 @@ const menuItems: MenuItem[] = [
     title: 'Cartão de Crédito', icon: CreditCard,
     children: [
       { title: 'Nova Fatura', url: '/nova-fatura', icon: PlusCircle },
+      { title: 'Importar Fatura', url: '/importar-fatura', icon: Sparkles },
       { title: 'Faturas', url: '/faturas', icon: List },
     ],
   },
