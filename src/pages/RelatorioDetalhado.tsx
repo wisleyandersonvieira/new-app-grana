@@ -62,7 +62,7 @@ export default function RelatorioDetalhado() {
     if (filterSub !== 'all') rq = rq.eq('subcategoria_id', filterSub);
 
     // Despesas (excl Cartão De Crédito)
-    const cartaoCatId = categorias.find(c => c.nome === 'Cartão De Crédito')?.id;
+    const cartaoCatId = categorias.find(c => c.nome.toLowerCase() === 'cartão de crédito')?.id;
     let dq = supabase.from('despesas').select('*').eq('usuario_id', user.id).gte('competencia', compInicio).lte('competencia', compFim);
     if (cartaoCatId) dq = dq.neq('categoria_id', cartaoCatId);
     if (filterCat !== 'all') dq = dq.eq('categoria_id', filterCat);

@@ -57,7 +57,7 @@ export default function ComparativoMensal() {
 
     const catMap: Record<string, string> = {};
     categorias.forEach(c => { catMap[c.id] = c.nome; });
-    const cartaoCatId = categorias.find(c => c.nome === 'Cartão De Crédito')?.id;
+    const cartaoCatId = categorias.find(c => c.nome.toLowerCase() === 'cartão de crédito')?.id;
 
     const data: Record<string, Record<string, number>> = {};
 
