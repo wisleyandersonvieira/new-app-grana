@@ -97,7 +97,7 @@ export default function RelatorioCompleto() {
     subcategorias.forEach(s => { subMap[s.id] = { nome: s.nome, catId: s.categoria_id }; });
 
     const investCatId = categorias.find(c => c.nome === 'Investimentos')?.id;
-    const cartaoCatId = categorias.find(c => c.nome === 'Cartão De Crédito')?.id;
+    const cartaoCatId = categorias.find(c => c.nome.toLowerCase() === 'cartão de crédito')?.id;
     const dateCol = tipoData === 'competencia' ? 'competencia' : 'data_pagamento';
 
     // Receitas
