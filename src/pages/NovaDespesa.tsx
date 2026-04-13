@@ -61,8 +61,8 @@ interface UltimaDespesa {
 
 type DespesaRow = Database['public']['Tables']['despesas']['Row'];
 
-interface UltimaDespesaQueryRow extends Pick<DespesaRow, 'descricao' | 'valor' | 'data' | 'paga' | 'parcela' | 'created_at'> {
-  categorias: { nome: string } | null;
+interface UltimaDespesaQueryRow extends Pick<DespesaRow, 'descricao' | 'valor' | 'data' | 'paga'> {
+  categorias: { nome: string } | { nome: string }[] | null;
 }
 
 function formatDateToDisplay(date: Date) {
@@ -123,6 +123,23 @@ export default function NovaDespesaPage() {
     [subcategorias, categoriaId]
   );
 
+  const setLastExpenseFromRow = useCallback((row: UltimaDespesaQueryRow | null) => {
+    if (!row) {
+      setUltimaDespesa(null);
+      return;
+    }
+
+    const categoria = Array.isArray(row.categorias) ? row.categorias[0] : row.categorias;
+
+    setUltimaDespesa({
+      descricao: row.descricao,
+      valor: row.valor,
+      data: row.data,
+      categoria_nome: categoria?.nome || null,
+      paga: Boolean(row.paga),
+    });
+  }, []);
+
   // Load reference data
   const loadUltimaDespesa = useCallback(async () => {
     if (!user) return;
@@ -130,34 +147,22 @@ export default function NovaDespesaPage() {
     try {
       const { data, error } = await supabase
         .from('despesas')
-        .select('descricao, valor, data, paga, parcela, created_at, categorias:categoria_id(nome)')
+        .select('descricao, valor, data, paga, categorias(nome)')
         .eq('usuario_id', user.id)
         .order('created_at', { ascending: false })
-        .order('parcela', { ascending: false })
-        .limit(1);
+        .limit(1)
+        .maybeSingle();
 
       if (error) {
         console.error('Erro ao carregar última despesa:', error);
         return;
       }
 
-      const lastExpense = data?.[0] as UltimaDespesaQueryRow | undefined;
-
-      if (lastExpense) {
-        setUltimaDespesa({
-          descricao: lastExpense.descricao,
-          valor: lastExpense.valor,
-          data: lastExpense.data,
-          categoria_nome: lastExpense.categorias?.nome || null,
-          paga: Boolean(lastExpense.paga),
-        });
-      } else {
-        setUltimaDespesa(null);
-      }
+      setLastExpenseFromRow((data as UltimaDespesaQueryRow | null) ?? null);
     } catch (err) {
       console.error('Erro ao carregar última despesa:', err);
     }
-  }, [user]);
+  }, [setLastExpenseFromRow, user]);
 
   const loadReferenceData = useCallback(async () => {
     const [catRes, subRes, contRes, bloqRes] = await Promise.all([
