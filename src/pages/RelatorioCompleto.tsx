@@ -89,7 +89,7 @@ function processData(
   catMap: Record<string, string>,
   subMap: Record<string, { nome: string; catId: string }>,
   tipoData: string,
-  dateField: 'data_pagamento' | 'data',
+  dateField: string,
 ) {
   const cats: CatData = {};
   const subs: SubData = {};
@@ -441,18 +441,18 @@ export default function RelatorioCompleto() {
           {
             content: 'Saldo Final',
             styles: {
-              fontStyle: 'bold',
-              fillColor: [15, 23, 42],
-              textColor: [255, 255, 255],
+              fontStyle: 'bold' as const,
+              fillColor: [15, 23, 42] as [number, number, number],
+              textColor: [255, 255, 255] as [number, number, number],
             },
           },
           ...months.map((month) => ({
             content: formatCurrency(saldoFinal[month] ?? 0),
             styles: {
-              fontStyle: 'bold',
-              fillColor: [15, 23, 42],
-              halign: 'right',
-              textColor: [255, 255, 255],
+              fontStyle: 'bold' as const,
+              fillColor: [15, 23, 42] as [number, number, number],
+              halign: 'right' as const,
+              textColor: [255, 255, 255] as [number, number, number],
             },
           })),
         ],
