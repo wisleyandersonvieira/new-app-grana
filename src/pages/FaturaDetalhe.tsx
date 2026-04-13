@@ -175,7 +175,7 @@ export default function FaturaDetalhe() {
           banco_origem: item.banco_origem || null,
           observacao_parser: item.observacao_parser || null,
           valor: parseCurrencyInput(item.valor),
-          competencia: fatura.mes_ano,
+          competencia: `${fatura.mes_ano}-01`,
           data: fatura.data_vencimento,
           data_compra: item.data_compra || null,
           parcelas: parcelamento.parcelas,
