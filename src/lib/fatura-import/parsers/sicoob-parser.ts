@@ -207,7 +207,12 @@ export class SicoobParser extends BaseStatementParser {
           if (isCardholderLine(nextLine)) break;
           // Column header = stop
           if (/^data\s+descri/i.test(nextLine)) break;
-          // Noise = stop
+          // Skip V.DOL and US$/U$ lines (international currency info)
+          if (/^V\.DOL/i.test(nextLine) || /^US\$/i.test(nextLine) || /^U\$/i.test(nextLine)) {
+            nextIdx++;
+            continue;
+          }
+          // Other noise = stop
           if (isSicoobNoise(nextLine)) break;
 
           if (/^R\$\s*[\d.,]+$/.test(nextLine)) {
