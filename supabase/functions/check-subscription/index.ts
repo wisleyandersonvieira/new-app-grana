@@ -95,6 +95,8 @@ Deno.serve(async (req) => {
 
     return json(buildResponse(subscription as Record<string, unknown> | null));
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message === "User not authenticated" || message === "Unauthorized" ? 401 : 500;
+    return json({ error: message }, status);
   }
 });
