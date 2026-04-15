@@ -14,6 +14,11 @@ type FaturaRow = {
   conta_id: string; status: string | null;
 };
 
+type DespesaFaturaRow = {
+  lote_id: string | null;
+  paga: boolean | null;
+};
+
 export default function Faturas() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -22,11 +27,24 @@ export default function Faturas() {
 
   const fetchFaturas = async () => {
     if (!user) return;
-    const [{ data: fats }, { data: contas }] = await Promise.all([
+    const [{ data: fats }, { data: contas }, { data: despesasFatura }] = await Promise.all([
       supabase.from('faturas_cartao').select('id, mes_ano, data_vencimento, valor_total, conta_id, status').eq('usuario_id', user.id).order('data_vencimento', { ascending: false }),
       supabase.from('contas').select('id, nome').eq('usuario_id', user.id),
+      supabase.from('despesas').select('lote_id, paga').eq('usuario_id', user.id).not('lote_id', 'is', null),
     ]);
-    if (fats) setFaturas(fats);
+    if (fats) {
+      const despesasPorFatura = (despesasFatura ?? []).reduce<Record<string, boolean>>((acc, despesa: DespesaFaturaRow) => {
+        if (despesa.lote_id) acc[despesa.lote_id] = Boolean(despesa.paga);
+        return acc;
+      }, {});
+
+      setFaturas(
+        fats.map((fatura) => ({
+          ...fatura,
+          status: despesasPorFatura[fatura.id] ? 'quitada' : 'aberta',
+        })),
+      );
+    }
     if (contas) {
       const map: Record<string, string> = {};
       contas.forEach(c => { map[c.id] = c.nome; });

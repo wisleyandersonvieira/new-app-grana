@@ -315,6 +315,7 @@ export default function ImportarFatura() {
           conta_id: cartaoId,
           data_vencimento: vencimento,
           mes_ano: competencia,
+          status: 'aberta',
           usuario_id: user.id,
           valor_total: totalImportado,
           observacao: `Importada automaticamente via PDF (${previewState.banco.toUpperCase()}).`,

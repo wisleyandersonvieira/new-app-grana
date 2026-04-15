@@ -35,6 +35,7 @@ export default function NovaFatura() {
       data_vencimento: vencimento,
       mes_ano: competencia,
       observacao: observacao || null,
+      status: 'aberta',
       usuario_id: user.id,
     }).select('id').single();
     if (error) { toast.error('Erro ao criar fatura.'); setLoading(false); return; }

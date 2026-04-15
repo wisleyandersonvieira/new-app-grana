@@ -70,10 +70,7 @@ export default function FaturaDetalhe() {
       navigate('/faturas');
       return;
     }
-    setFatura(fat);
-    setIsPaid(fat.status === 'quitada');
-
-    const [{ data: cartao }, { data: prevFats }, { data: existingItems }, { data: cats }, { data: subs }] = await Promise.all([
+    const [{ data: cartao }, { data: prevFats }, { data: existingItems }, { data: cats }, { data: subs }, { data: linkedExpense }] = await Promise.all([
       supabase.from('contas').select('nome').eq('id', fat.conta_id).single(),
       supabase.from('faturas_cartao')
         .select('valor_total')
@@ -85,7 +82,12 @@ export default function FaturaDetalhe() {
       supabase.from('itens_fatura').select('*').eq('fatura_id', id).order('data_compra', { ascending: true }),
       supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
       supabase.from('subcategorias').select('id, nome, categoria_id').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
+      supabase.from('despesas').select('paga').eq('usuario_id', user.id).eq('lote_id', fat.id).maybeSingle(),
     ]);
+
+    const statusAtual = linkedExpense?.paga ? 'quitada' : 'aberta';
+    setFatura({ ...fat, status: statusAtual });
+    setIsPaid(linkedExpense?.paga ?? fat.status === 'quitada');
 
     if (cartao) setCartaoNome(cartao.nome);
     setFaturaAnteriorTotal(prevFats && prevFats.length > 0 ? prevFats[0].valor_total : null);
@@ -192,7 +194,7 @@ export default function FaturaDetalhe() {
       }
     }
 
-    await supabase.from('faturas_cartao').update({ valor_total: total }).eq('id', fatura.id);
+    await supabase.from('faturas_cartao').update({ valor_total: total, status: 'aberta' }).eq('id', fatura.id);
     await supabase.from('despesas').delete().eq('lote_id', fatura.id);
 
     let catId: string | null = null;

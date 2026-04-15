@@ -79,6 +79,7 @@ interface DespesaRow {
   conta_id: string | null;
   categoria_id: string | null;
   subcategoria_id: string | null;
+  lote_id: string | null;
   is_cartao: boolean;
 }
 
@@ -207,6 +208,7 @@ export default function Despesas() {
         conta_id: despesa.conta_id,
         categoria_id: despesa.categoria_id,
         subcategoria_id: despesa.subcategoria_id,
+        lote_id: despesa.lote_id,
         is_cartao: despesa.contas?.tipo === 'cartao',
       })));
     }
@@ -332,6 +334,9 @@ export default function Despesas() {
         continue;
       }
       await supabase.from('despesas').update({ paga: true, data_pagamento: dataPagamento, conta_id: contaId }).eq('id', id);
+      if (despesa?.lote_id) {
+        await supabase.from('faturas_cartao').update({ status: 'quitada' }).eq('id', despesa.lote_id);
+      }
     }
 
     toast.success('Pagamento(s) registrado(s)!');
@@ -347,6 +352,9 @@ export default function Despesas() {
       return;
     }
     await supabase.from('despesas').update({ paga: false, data_pagamento: null }).eq('id', id);
+    if (despesa?.lote_id) {
+      await supabase.from('faturas_cartao').update({ status: 'aberta' }).eq('id', despesa.lote_id);
+    }
     toast.success('Pagamento cancelado.');
     loadData();
   }
