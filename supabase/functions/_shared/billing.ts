@@ -1,5 +1,5 @@
 import Stripe from "https://esm.sh/stripe@18.5.0";
-import { createClient } from "npm:@supabase/supabase-js@2.57.2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
