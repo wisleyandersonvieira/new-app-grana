@@ -9,7 +9,12 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 
 function toTitleCase(str: string) {
-  return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase());
+  const lower = ['de', 'do', 'da', 'dos', 'das', 'e', 'em', 'no', 'na', 'nos', 'nas', 'por', 'para', 'com'];
+  return str.replace(/\w\S*/g, (txt, offset) => {
+    const word = txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase();
+    if (offset > 0 && lower.includes(txt.toLowerCase())) return txt.toLowerCase();
+    return word;
+  });
 }
 
 type Categoria = {
