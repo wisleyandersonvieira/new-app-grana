@@ -57,6 +57,8 @@ export default function ComparativoMensal() {
       .trim()
       .toLowerCase();
 
+  const getMonthKey = (value: string | null | undefined) => value?.substring(0, 7) ?? null;
+
   const generate = async () => {
     if (!user || !dataInicio || !dataFim) return;
     const mths = getMonthsBetween(dataInicio, dataFim);
@@ -85,7 +87,7 @@ export default function ComparativoMensal() {
     despesas?.forEach(d => {
       if (d.categoria_id && cartaoCatIds.has(d.categoria_id)) return;
       const catNome = d.categoria_id ? catMap[d.categoria_id] ?? 'Sem' : 'Sem';
-      const month = tipoData === 'competencia' ? d.competencia : d.data_pagamento?.substring(0, 7);
+      const month = tipoData === 'competencia' ? getMonthKey(d.competencia) : getMonthKey(d.data_pagamento);
       if (!month) return;
       if (!data[catNome]) data[catNome] = {};
       data[catNome][month] = (data[catNome][month] ?? 0) + d.valor;
@@ -101,7 +103,7 @@ export default function ComparativoMensal() {
 
     ((itens ?? []) as ItemFaturaReport[])
       .filter((it) => {
-        const compRef = it.faturas_cartao?.mes_ano ?? it.competencia;
+        const compRef = getMonthKey(it.faturas_cartao?.mes_ano ?? it.competencia);
         const dataRef = it.faturas_cartao?.data_vencimento ?? it.data;
 
         if (tipoData === 'competencia') {
@@ -114,8 +116,8 @@ export default function ComparativoMensal() {
       const catNome = it.categoria_id ? catMap[it.categoria_id] ?? 'Sem' : 'Sem';
       const month =
         tipoData === 'competencia'
-          ? (it.faturas_cartao?.mes_ano ?? it.competencia)
-          : (it.faturas_cartao?.data_vencimento ?? it.data)?.substring(0, 7);
+          ? getMonthKey(it.faturas_cartao?.mes_ano ?? it.competencia)
+          : getMonthKey(it.faturas_cartao?.data_vencimento ?? it.data);
       if (!month) return;
       if (!data[catNome]) data[catNome] = {};
       data[catNome][month] = (data[catNome][month] ?? 0) + it.valor;
