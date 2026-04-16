@@ -3,7 +3,9 @@
     "allow": [
       "Bash(wc -l /workspaces/new-app-grana/src/pages/*.tsx)",
       "Bash(xargs cat:*)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(npm run *)",
+      "Bash(npm install *)"
     ]
   }
 }

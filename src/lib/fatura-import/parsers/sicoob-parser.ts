@@ -74,10 +74,12 @@ function parseRsAmount(raw: string): number {
  * followed by a card number on the same or next line
  */
 function isCardholderLine(line: string): boolean {
-  // All uppercase name, possibly followed by a 4-digit card number
+  // A bare 4-digit card number on its own line (e.g. "7372")
   if (/^\d{4}$/.test(line.trim())) return true;
-  // Full uppercase name (at least 2 words, no digits except trailing card number)
-  if (/^[A-ZÁÉÍÓÚÂÊÔÀÃÕÇ\s]{6,}(\s+\d{4})?$/.test(line.trim())) return true;
+  // Full uppercase name FOLLOWED by a 4-digit card number (e.g. "JESSICA L R S VIEIRA 7372").
+  // The card number suffix is required so that all-uppercase store names like
+  // "CASA DOS UNIFORMES M" or "RECANTO CATARATAS HO" are NOT misidentified as cardholder headers.
+  if (/^[A-ZÁÉÍÓÚÂÊÔÀÃÕÇ\s]{6,}\s+\d{4}$/.test(line.trim())) return true;
   return false;
 }
 
@@ -262,13 +264,15 @@ export class SicoobParser extends BaseStatementParser {
         while (nextIdx < allLines.length) {
           const nextLine = allLines[nextIdx].trim();
           if (DATE_START.test(nextLine) || isCardholderLine(nextLine) || /^data\s+descri/i.test(nextLine)) break;
-          if (isSicoobNoise(nextLine)) break;
-          if (isInstallmentLine(nextLine)) {
-            rawDescription += ` ${nextLine}`;
+          // Check currency meta lines BEFORE noise so that "US$ xx U$ xx" and "V.DOL xx"
+          // are skipped (not treated as noise-break) when the date line had no US$ prefix.
+          if (isCurrencyMetaLine(nextLine)) {
             nextIdx++;
             continue;
           }
-          if (isCurrencyMetaLine(nextLine)) {
+          if (isSicoobNoise(nextLine)) break;
+          if (isInstallmentLine(nextLine)) {
+            rawDescription += ` ${nextLine}`;
             nextIdx++;
             continue;
           }
