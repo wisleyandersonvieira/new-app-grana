@@ -81,6 +81,30 @@ function isCardholderLine(line: string): boolean {
   return false;
 }
 
+function isInstallmentLine(line: string): boolean {
+  return /^\d{2}\/\d{2}$/.test(line.trim());
+}
+
+function isRsOnlyLine(line: string): boolean {
+  return /^-?\s*R\$\s*[\d.,]+$/.test(line.trim());
+}
+
+function isCurrencyMetaLine(line: string): boolean {
+  return /^V\.DOL/i.test(line) || /^US\$/i.test(line) || /^U\$/i.test(line);
+}
+
+function isDescriptionContinuationLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (isSicoobNoise(trimmed)) return false;
+  if (isCardholderLine(trimmed)) return false;
+  if (DATE_START.test(trimmed)) return false;
+  if (isInstallmentLine(trimmed)) return false;
+  if (isRsOnlyLine(trimmed)) return false;
+  if (isCurrencyMetaLine(trimmed)) return false;
+  return true;
+}
+
 export class SicoobParser extends BaseStatementParser {
   readonly bank = 'sicoob' as const;
 
