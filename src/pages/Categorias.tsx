@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { normalizeCategoryLabel } from '@/lib/credit-card-category';
 
 function toTitleCase(str: string) {
   const lower = ['de', 'do', 'da', 'dos', 'das', 'e', 'em', 'no', 'na', 'nos', 'nas', 'por', 'para', 'com'];
@@ -49,6 +50,12 @@ export default function Categorias() {
     if (!user || !nome.trim()) return;
     setLoading(true);
     const formatted = toTitleCase(nome.trim());
+    const duplicate = categorias.find((categoria) => normalizeCategoryLabel(categoria.nome) === normalizeCategoryLabel(formatted));
+    if (duplicate) {
+      toast.error('Categoria já existe.');
+      setLoading(false);
+      return;
+    }
     const { error } = await supabase.from('categorias').insert({ nome: formatted, usuario_id: user.id });
     if (error) toast.error('Erro ao cadastrar categoria');
     else { toast.success('Categoria cadastrada!'); setNome(''); fetchCategorias(); }
@@ -59,6 +66,14 @@ export default function Categorias() {
     if (!editNome.trim()) return;
     setLoading(true);
     const formatted = toTitleCase(editNome.trim());
+    const duplicate = categorias.find(
+      (categoria) => categoria.id !== id && normalizeCategoryLabel(categoria.nome) === normalizeCategoryLabel(formatted),
+    );
+    if (duplicate) {
+      toast.error('Categoria já existe.');
+      setLoading(false);
+      return;
+    }
     const { error } = await supabase.from('categorias').update({ nome: formatted }).eq('id', id);
     if (error) { toast.error('Erro ao editar'); setLoading(false); return; }
     // Update nome in despesas/receitas is not needed — they reference by categoria_id FK

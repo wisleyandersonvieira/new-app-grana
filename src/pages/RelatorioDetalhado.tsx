@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getCurrentCompetencia, getMonthName } from '@/lib/financial';
 import { exportToExcel } from '@/lib/export';
+import { isCreditCardCategoryName } from '@/lib/credit-card-category';
 
 type Row = { data_pagamento: string; descricao: string; categoria: string; subcategoria: string; receita: number; despesa: number };
 type ItemFaturaReport = {
@@ -35,13 +36,6 @@ export default function RelatorioDetalhado() {
   const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string }[]>([]);
   const [sortKey, setSortKey] = useState<keyof Row>('data_pagamento');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const normalizeLabel = (value: string | null | undefined) =>
-    (value ?? '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toLowerCase();
-
   useEffect(() => {
     if (!user) return;
     Promise.all([
@@ -61,7 +55,7 @@ export default function RelatorioDetalhado() {
     subcategorias.forEach(s => { subMap[s.id] = s.nome; });
     const cartaoCatIds = new Set(
       categorias
-        .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
+        .filter(c => isCreditCardCategoryName(c.nome))
         .map(c => c.id),
     );
 

@@ -12,6 +12,7 @@ import { formatCurrency, parseCurrencyInput, formatCompetencia } from '@/lib/fin
 import { Badge } from '@/components/ui/badge';
 import { learnInvoiceCategorization } from '@/lib/fatura-import/service';
 import { normalizeInstallmentText, normalizeStatementDescription } from '@/lib/fatura-import/normalization';
+import { sanitizeCreditCardCategoryData } from '@/lib/credit-card-category';
 
 type ItemFatura = {
   id?: string;
@@ -63,6 +64,8 @@ export default function FaturaDetalhe() {
 
   const fetchData = useCallback(async () => {
     if (!user || !id) return;
+
+    await sanitizeCreditCardCategoryData(user.id);
 
     const { data: fat } = await supabase.from('faturas_cartao').select('*').eq('id', id).single();
     if (!fat) {
@@ -154,6 +157,8 @@ export default function FaturaDetalhe() {
     if (!user || !fatura || isPaid) return;
     setLoading(true);
 
+    const { canonicalCategoryId, canonicalSubcategoryId } = await sanitizeCreditCardCategoryData(user.id);
+
     await supabase.from('itens_fatura').delete().eq('fatura_id', fatura.id);
 
     if (items.length > 0) {
@@ -197,32 +202,11 @@ export default function FaturaDetalhe() {
     await supabase.from('faturas_cartao').update({ valor_total: total, status: 'aberta' }).eq('id', fatura.id);
     await supabase.from('despesas').delete().eq('lote_id', fatura.id);
 
-    let catId: string | null = null;
-    let subId: string | null = null;
-
-    const { data: catData } = await supabase.from('categorias').select('id').eq('nome', 'Cartão De Crédito').eq('usuario_id', user.id).maybeSingle();
-    if (catData) {
-      catId = catData.id;
-    } else {
-      const { data: newCat } = await supabase.from('categorias').insert({ nome: 'Cartão De Crédito', usuario_id: user.id, obrigatoria: true }).select('id').single();
-      if (newCat) catId = newCat.id;
-    }
-
-    if (catId) {
-      const { data: subData } = await supabase.from('subcategorias').select('id').eq('nome', 'Fatura Consolidada').eq('categoria_id', catId).eq('usuario_id', user.id).maybeSingle();
-      if (subData) {
-        subId = subData.id;
-      } else {
-        const { data: newSub } = await supabase.from('subcategorias').insert({ nome: 'Fatura Consolidada', categoria_id: catId, usuario_id: user.id, obrigatoria: true }).select('id').single();
-        if (newSub) subId = newSub.id;
-      }
-    }
-
     if (total > 0) {
       await supabase.from('despesas').insert({
         usuario_id: user.id,
-        categoria_id: catId,
-        subcategoria_id: subId,
+        categoria_id: canonicalCategoryId,
+        subcategoria_id: canonicalSubcategoryId,
         descricao: `Fatura ${cartaoNome} - ${formatCompetencia(fatura.mes_ano)}`,
         valor: total,
         data: fatura.data_vencimento,

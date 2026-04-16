@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getCurrentCompetencia, getMonthName } from '@/lib/financial';
 import { Badge } from '@/components/ui/badge';
+import { isCreditCardCategoryName } from '@/lib/credit-card-category';
 
 type MetaView = { id: string; tipo: string; categoria: string; valor: number; realizado: number; percent: number };
 
@@ -21,13 +22,6 @@ export default function Metas() {
   const ano = comp.split('-')[0];
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
-  const normalizeLabel = (value: string | null | undefined) =>
-    (value ?? '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toLowerCase();
-
   useEffect(() => {
     if (!user) return;
     const fetchMetas = async () => {
@@ -43,7 +37,7 @@ export default function Metas() {
       categorias?.forEach(c => { catMap[c.id] = c.nome; });
       const cartaoCatIds = new Set(
         (categorias ?? [])
-          .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
+          .filter(c => isCreditCardCategoryName(c.nome))
           .map(c => c.id),
       );
 

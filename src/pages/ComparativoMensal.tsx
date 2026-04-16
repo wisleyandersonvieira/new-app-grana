@@ -8,6 +8,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
 import { exportToPDF } from '@/lib/export';
+import {
+  isCreditCardCategoryName,
+  sanitizeCreditCardCategoryData,
+} from '@/lib/credit-card-category';
 
 type ItemFaturaReport = {
   fatura_id: string;
@@ -51,17 +55,11 @@ export default function ComparativoMensal() {
     return result;
   };
 
-  const normalizeLabel = (value: string | null | undefined) =>
-    (value ?? '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toLowerCase();
-
   const getMonthKey = (value: string | null | undefined) => value?.substring(0, 7) ?? null;
 
   const generate = async () => {
     if (!user || !dataInicio || !dataFim) return;
+    await sanitizeCreditCardCategoryData(user.id);
     const mths = getMonthsBetween(dataInicio, dataFim);
     setMonths(mths);
 
@@ -69,7 +67,7 @@ export default function ComparativoMensal() {
     categorias.forEach(c => { catMap[c.id] = c.nome; });
     const cartaoCatIds = new Set(
       categorias
-        .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
+        .filter(c => isCreditCardCategoryName(c.nome))
         .map(c => c.id),
     );
     const invoicePayments = new Map<string, string>();

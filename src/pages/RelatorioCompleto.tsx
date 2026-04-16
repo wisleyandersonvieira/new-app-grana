@@ -18,6 +18,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
 import { cn } from '@/lib/utils';
+import {
+  isCreditCardCategoryName,
+  sanitizeCreditCardCategoryData,
+} from '@/lib/credit-card-category';
 
 type CatData = Record<string, Record<string, number>>;
 type SubData = Record<string, Record<string, Record<string, number>>>;
@@ -322,6 +326,7 @@ export default function RelatorioCompleto() {
     setLoading(true);
 
     try {
+      await sanitizeCreditCardCategoryData(user.id);
       const reportMonths = getMonthsBetween(dataInicio, dataFim);
       setMonths(reportMonths);
 
@@ -329,12 +334,6 @@ export default function RelatorioCompleto() {
         acc[category.id] = category.nome;
         return acc;
       }, {});
-      const normalizeLabel = (value: string | null | undefined) =>
-        (value ?? '')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .trim()
-          .toLowerCase();
 
       const subMap = subcategorias.reduce<Record<string, { nome: string; catId: string }>>((acc, subcategory) => {
         acc[subcategory.id] = { nome: subcategory.nome, catId: subcategory.categoria_id };
@@ -344,7 +343,7 @@ export default function RelatorioCompleto() {
       const investCatId = categorias.find((category) => category.nome === 'Investimentos')?.id;
       const cartaoCatIds = new Set(
         categorias
-          .filter((category) => normalizeLabel(category.nome) === 'cartao de credito')
+          .filter((category) => isCreditCardCategoryName(category.nome))
           .map((category) => category.id),
       );
       const invoicePayments = new Map<string, string>();

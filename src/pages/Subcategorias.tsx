@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { normalizeCategoryLabel } from '@/lib/credit-card-category';
 
 function toTitleCase(str: string) {
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase());
@@ -46,7 +47,9 @@ export default function Subcategorias() {
     if (!user || !nome.trim() || !categoriaId) return;
     const formatted = toTitleCase(nome.trim());
     // Duplicate check
-    const existing = subcategorias.find(s => s.nome.toLowerCase() === formatted.toLowerCase() && s.categoria_id === categoriaId);
+    const existing = subcategorias.find(
+      (s) => normalizeCategoryLabel(s.nome) === normalizeCategoryLabel(formatted) && s.categoria_id === categoriaId,
+    );
     if (existing) { toast.error('Subcategoria já existe nesta categoria.'); return; }
     setLoading(true);
     const { error } = await supabase.from('subcategorias').insert({ nome: formatted, categoria_id: categoriaId, usuario_id: user.id });
@@ -58,7 +61,9 @@ export default function Subcategorias() {
   const handleEdit = async (id: string) => {
     if (!editNome.trim() || !editCategoriaId) return;
     const formatted = toTitleCase(editNome.trim());
-    const dup = subcategorias.find(s => s.id !== id && s.nome.toLowerCase() === formatted.toLowerCase() && s.categoria_id === editCategoriaId);
+    const dup = subcategorias.find(
+      (s) => s.id !== id && normalizeCategoryLabel(s.nome) === normalizeCategoryLabel(formatted) && s.categoria_id === editCategoriaId,
+    );
     if (dup) { toast.error('Subcategoria já existe nesta categoria.'); return; }
     setLoading(true);
     const { error } = await supabase.from('subcategorias').update({ nome: formatted, categoria_id: editCategoriaId }).eq('id', id);

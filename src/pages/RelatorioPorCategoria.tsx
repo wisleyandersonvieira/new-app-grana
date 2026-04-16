@@ -6,6 +6,7 @@ import { BarChart3 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getCurrentCompetencia, getMonthName } from '@/lib/financial';
+import { isCreditCardCategoryName } from '@/lib/credit-card-category';
 
 type CatRow = { nome: string; total: number };
 
@@ -18,13 +19,6 @@ export default function RelatorioPorCategoria() {
   const ano = comp.split('-')[0];
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
-  const normalizeLabel = (value: string | null | undefined) =>
-    (value ?? '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toLowerCase();
-
   const generate = async () => {
     if (!user) return;
     // Fetch despesas (excluding "Cartão De Crédito") + itens_fatura for the competencia
@@ -38,7 +32,7 @@ export default function RelatorioPorCategoria() {
     categorias?.forEach(c => { catMap[c.id] = c.nome; });
     const cartaoCatIds = new Set(
       (categorias ?? [])
-        .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
+        .filter(c => isCreditCardCategoryName(c.nome))
         .map(c => c.id),
     );
 
