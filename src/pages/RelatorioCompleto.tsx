@@ -31,6 +31,7 @@ type Categoria = { id: string; nome: string };
 type Subcategoria = { id: string; nome: string; categoria_id: string };
 
 type ItemFaturaReport = {
+  fatura_id: string;
   valor: number;
   categoria_id: string | null;
   subcategoria_id: string | null;
@@ -98,7 +99,7 @@ function processData(
   items.forEach((item) => {
     const month =
       tipoData === 'competencia'
-        ? item.competencia
+        ? item.competencia?.substring(0, 7)
         : (item[dateField] ?? item.data)?.substring(0, 7);
 
     if (!month) return;
@@ -346,6 +347,7 @@ export default function RelatorioCompleto() {
           .filter((category) => normalizeLabel(category.nome) === 'cartao de credito')
           .map((category) => category.id),
       );
+      const invoicePayments = new Map<string, string>();
       const dateColumn = tipoData === 'competencia' ? 'competencia' : 'data_pagamento';
       const { start: inicioDia, end: fimDia } = {
         start: getMonthDateRange(dataInicio).start,
@@ -370,21 +372,41 @@ export default function RelatorioCompleto() {
 
       let itensFaturaQuery = supabase
         .from('itens_fatura')
-        .select('valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')
+        .select('fatura_id, valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')
         .eq('usuario_id', user.id);
       if (selectedCats.length < categorias.length) itensFaturaQuery = itensFaturaQuery.in('categoria_id', selectedCats);
 
-      const [{ data: receitas, error: receitasError }, { data: allDespesas, error: despesasError }, { data: itensFatura, error: itensError }] =
-        await Promise.all([receitaQuery, despesaQuery, itensFaturaQuery]);
+      let pagamentosFaturaQuery = supabase
+        .from('despesas')
+        .select('lote_id, data_pagamento')
+        .eq('usuario_id', user.id)
+        .not('lote_id', 'is', null)
+        .not('data_pagamento', 'is', null);
+      if (tipoData === 'pagamento') {
+        pagamentosFaturaQuery = pagamentosFaturaQuery.gte('data_pagamento', inicioDia).lte('data_pagamento', fimDia);
+      }
+
+      const [
+        { data: receitas, error: receitasError },
+        { data: allDespesas, error: despesasError },
+        { data: itensFatura, error: itensError },
+        { data: pagamentosFatura, error: pagamentosError },
+      ] = await Promise.all([receitaQuery, despesaQuery, itensFaturaQuery, pagamentosFaturaQuery]);
 
       if (receitasError) throw receitasError;
       if (despesasError) throw despesasError;
       if (itensError) throw itensError;
+      if (pagamentosError) throw pagamentosError;
+
+      pagamentosFatura?.forEach((item) => {
+        if (!item.lote_id || !item.data_pagamento) return;
+        invoicePayments.set(item.lote_id, item.data_pagamento);
+      });
 
       const itensFaturaFiltrados = ((itensFatura ?? []) as ItemFaturaReport[])
         .filter((item) => {
-          const compRef = item.faturas_cartao?.mes_ano ?? item.competencia;
-          const dataRef = item.faturas_cartao?.data_vencimento ?? item.data;
+          const compRef = (item.faturas_cartao?.mes_ano ?? item.competencia)?.substring(0, 7);
+          const dataRef = invoicePayments.get(item.fatura_id) ?? item.faturas_cartao?.data_vencimento ?? item.data;
 
           if (tipoData === 'competencia') {
             return Boolean(compRef && compRef >= dataInicio && compRef <= dataFim);
@@ -394,8 +416,8 @@ export default function RelatorioCompleto() {
         })
         .map((item) => ({
           ...item,
-          competencia: item.faturas_cartao?.mes_ano ?? item.competencia,
-          data: item.faturas_cartao?.data_vencimento ?? item.data,
+          competencia: (item.faturas_cartao?.mes_ano ?? item.competencia)?.substring(0, 7),
+          data: invoicePayments.get(item.fatura_id) ?? item.faturas_cartao?.data_vencimento ?? item.data,
         }));
 
       const despesasBase = allDespesas?.filter(

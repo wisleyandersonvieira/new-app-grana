@@ -10,6 +10,7 @@ import { formatCurrency, getMonthName } from '@/lib/financial';
 import { exportToPDF } from '@/lib/export';
 
 type ItemFaturaReport = {
+  fatura_id: string;
   valor: number;
   categoria_id: string | null;
   data: string | null;
@@ -71,6 +72,7 @@ export default function ComparativoMensal() {
         .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
         .map(c => c.id),
     );
+    const invoicePayments = new Map<string, string>();
 
     const data: Record<string, Record<string, number>> = {};
 
@@ -94,9 +96,25 @@ export default function ComparativoMensal() {
     });
 
     // Itens fatura
+    if (tipoData === 'pagamento') {
+      let pq = supabase
+        .from('despesas')
+        .select('lote_id, data_pagamento')
+        .eq('usuario_id', user.id)
+        .not('lote_id', 'is', null)
+        .not('data_pagamento', 'is', null);
+      pq = pq.gte('data_pagamento', `${dataInicio}-01`).lte('data_pagamento', `${dataFim}-31`);
+
+      const { data: pagamentosFatura } = await pq;
+      pagamentosFatura?.forEach((item) => {
+        if (!item.lote_id || !item.data_pagamento) return;
+        invoicePayments.set(item.lote_id, item.data_pagamento);
+      });
+    }
+
     let iq = supabase
       .from('itens_fatura')
-      .select('categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
+      .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
       .eq('usuario_id', user.id);
     if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
     const { data: itens } = await iq;
@@ -104,7 +122,7 @@ export default function ComparativoMensal() {
     ((itens ?? []) as ItemFaturaReport[])
       .filter((it) => {
         const compRef = getMonthKey(it.faturas_cartao?.mes_ano ?? it.competencia);
-        const dataRef = it.faturas_cartao?.data_vencimento ?? it.data;
+        const dataRef = invoicePayments.get(it.fatura_id) ?? it.faturas_cartao?.data_vencimento ?? it.data;
 
         if (tipoData === 'competencia') {
           return Boolean(compRef && compRef >= dataInicio && compRef <= dataFim);
@@ -117,7 +135,7 @@ export default function ComparativoMensal() {
       const month =
         tipoData === 'competencia'
           ? getMonthKey(it.faturas_cartao?.mes_ano ?? it.competencia)
-          : getMonthKey(it.faturas_cartao?.data_vencimento ?? it.data);
+          : getMonthKey(invoicePayments.get(it.fatura_id) ?? it.faturas_cartao?.data_vencimento ?? it.data);
       if (!month) return;
       if (!data[catNome]) data[catNome] = {};
       data[catNome][month] = (data[catNome][month] ?? 0) + it.valor;
