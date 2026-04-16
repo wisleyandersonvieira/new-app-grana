@@ -16,9 +16,8 @@ function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][]
 
   const midpoint = pageWidth / 2;
   const Y_TOL = 3;
-  const COL_GAP_THRESHOLD = 40; // minimum X gap to consider a column split
 
-  // 1. Group tokens into visual rows by Y proximity
+  // 1) Group tokens into visual rows by Y proximity
   const sorted = [...tokens].sort((a, b) => b.y - a.y);
   const visualRows: TextToken[][] = [];
   let curRow: TextToken[] = [sorted[0]];
@@ -35,52 +34,37 @@ function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][]
   }
   visualRows.push(curRow);
 
-  // 2. For each visual row, check for a large X gap that indicates two columns.
-  //    Split such rows into sub-rows at the gap.
-  const subRows: TextToken[][] = [];
+  // 2) Detect whether the page really has two independent columns.
+  // We use the leftmost token of each visual row so one-column rows with amounts
+  // far to the right do not falsely count as two-column pages.
+  let leftRowCount = 0;
+  let rightRowCount = 0;
   for (const row of visualRows) {
-    if (row.length <= 1) {
-      subRows.push(row);
-      continue;
+    const minX = Math.min(...row.map((t) => t.x));
+    if (minX < midpoint - 10) {
+      leftRowCount += 1;
+    } else {
+      rightRowCount += 1;
     }
-    const byX = [...row].sort((a, b) => a.x - b.x);
-    // Find the largest gap
-    let maxGap = 0;
-    let gapIdx = -1;
-    for (let i = 1; i < byX.length; i++) {
-      const gap = byX[i].x - (byX[i - 1].x + byX[i - 1].width);
-      if (gap > maxGap) {
-        maxGap = gap;
-        gapIdx = i;
-      }
-    }
-    // Only split if the gap is large AND the split point is near the midpoint
-    if (maxGap > COL_GAP_THRESHOLD && gapIdx > 0) {
-      const gapCenter = (byX[gapIdx - 1].x + byX[gapIdx - 1].width + byX[gapIdx].x) / 2;
-      // The gap should be roughly around the page midpoint (within 30% of page width)
-      if (Math.abs(gapCenter - midpoint) < pageWidth * 0.3) {
-        subRows.push(byX.slice(0, gapIdx));
-        subRows.push(byX.slice(gapIdx));
-        continue;
-      }
-    }
-    subRows.push(row);
   }
 
-  // 3. Assign each sub-row to left or right column based on its leftmost token
+  if (leftRowCount < 3 || rightRowCount < 3) {
+    return [tokens];
+  }
+
+  // 3) Split each visual row into a left and/or right segment using the page midpoint.
+  // This prevents rows from different columns but same Y from being merged together.
   const leftTokens: TextToken[] = [];
   const rightTokens: TextToken[] = [];
 
-  for (const row of subRows) {
-    const minX = Math.min(...row.map((t) => t.x));
-    if (minX < midpoint - 10) {
-      leftTokens.push(...row);
-    } else {
-      rightTokens.push(...row);
-    }
+  for (const row of visualRows) {
+    const leftRow = row.filter((token) => token.x + token.width / 2 < midpoint);
+    const rightRow = row.filter((token) => token.x + token.width / 2 >= midpoint);
+
+    if (leftRow.length > 0) leftTokens.push(...leftRow);
+    if (rightRow.length > 0) rightTokens.push(...rightRow);
   }
 
-  // Only split if both sides have a reasonable number of tokens
   if (leftTokens.length > 5 && rightTokens.length > 5) {
     return [leftTokens, rightTokens];
   }
