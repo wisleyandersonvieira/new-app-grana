@@ -16,10 +16,11 @@ function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][]
 
   const midpoint = pageWidth / 2;
   const Y_TOL = 3;
+  const COL_GAP_THRESHOLD = 40; // minimum X gap to consider a column split
 
-  // Group tokens into rows by Y proximity
+  // 1. Group tokens into visual rows by Y proximity
   const sorted = [...tokens].sort((a, b) => b.y - a.y);
-  const rows: TextToken[][] = [];
+  const visualRows: TextToken[][] = [];
   let curRow: TextToken[] = [sorted[0]];
   let curY = sorted[0].y;
 
@@ -27,19 +28,50 @@ function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][]
     if (Math.abs(sorted[i].y - curY) <= Y_TOL) {
       curRow.push(sorted[i]);
     } else {
-      rows.push(curRow);
+      visualRows.push(curRow);
       curRow = [sorted[i]];
       curY = sorted[i].y;
     }
   }
-  rows.push(curRow);
+  visualRows.push(curRow);
 
-  // Assign each ROW to a column based on its leftmost token.
-  // This keeps wide lines (e.g. international transactions with R$ far right) intact.
+  // 2. For each visual row, check for a large X gap that indicates two columns.
+  //    Split such rows into sub-rows at the gap.
+  const subRows: TextToken[][] = [];
+  for (const row of visualRows) {
+    if (row.length <= 1) {
+      subRows.push(row);
+      continue;
+    }
+    const byX = [...row].sort((a, b) => a.x - b.x);
+    // Find the largest gap
+    let maxGap = 0;
+    let gapIdx = -1;
+    for (let i = 1; i < byX.length; i++) {
+      const gap = byX[i].x - (byX[i - 1].x + byX[i - 1].width);
+      if (gap > maxGap) {
+        maxGap = gap;
+        gapIdx = i;
+      }
+    }
+    // Only split if the gap is large AND the split point is near the midpoint
+    if (maxGap > COL_GAP_THRESHOLD && gapIdx > 0) {
+      const gapCenter = (byX[gapIdx - 1].x + byX[gapIdx - 1].width + byX[gapIdx].x) / 2;
+      // The gap should be roughly around the page midpoint (within 30% of page width)
+      if (Math.abs(gapCenter - midpoint) < pageWidth * 0.3) {
+        subRows.push(byX.slice(0, gapIdx));
+        subRows.push(byX.slice(gapIdx));
+        continue;
+      }
+    }
+    subRows.push(row);
+  }
+
+  // 3. Assign each sub-row to left or right column based on its leftmost token
   const leftTokens: TextToken[] = [];
   const rightTokens: TextToken[] = [];
 
-  for (const row of rows) {
+  for (const row of subRows) {
     const minX = Math.min(...row.map((t) => t.x));
     if (minX < midpoint - 10) {
       leftTokens.push(...row);
