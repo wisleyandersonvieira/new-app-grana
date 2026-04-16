@@ -50,6 +50,13 @@ export default function ComparativoMensal() {
     return result;
   };
 
+  const normalizeLabel = (value: string | null | undefined) =>
+    (value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+
   const generate = async () => {
     if (!user || !dataInicio || !dataFim) return;
     const mths = getMonthsBetween(dataInicio, dataFim);
@@ -57,19 +64,26 @@ export default function ComparativoMensal() {
 
     const catMap: Record<string, string> = {};
     categorias.forEach(c => { catMap[c.id] = c.nome; });
-    const cartaoCatId = categorias.find(c => c.nome.toLowerCase() === 'cartão de crédito')?.id;
+    const cartaoCatIds = new Set(
+      categorias
+        .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
+        .map(c => c.id),
+    );
 
     const data: Record<string, Record<string, number>> = {};
 
-    // Despesas (excl Cartão De Crédito)
-    let dq = supabase.from('despesas').select('categoria_id, valor, competencia, data_pagamento').eq('usuario_id', user.id);
+    // Despesas (exclui todas as categorias de fatura consolidada do cartão)
+    let dq = supabase
+      .from('despesas')
+      .select('categoria_id, valor, competencia, data_pagamento')
+      .eq('usuario_id', user.id);
     if (tipoData === 'competencia') dq = dq.gte('competencia', dataInicio).lte('competencia', dataFim);
     else dq = dq.gte('data_pagamento', dataInicio + '-01').lte('data_pagamento', dataFim + '-31');
     if (selectedCats.length < categorias.length) dq = dq.in('categoria_id', selectedCats);
     const { data: despesas } = await dq;
 
     despesas?.forEach(d => {
-      if (d.categoria_id === cartaoCatId) return;
+      if (d.categoria_id && cartaoCatIds.has(d.categoria_id)) return;
       const catNome = d.categoria_id ? catMap[d.categoria_id] ?? 'Sem' : 'Sem';
       const month = tipoData === 'competencia' ? d.competencia : d.data_pagamento?.substring(0, 7);
       if (!month) return;

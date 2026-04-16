@@ -328,6 +328,12 @@ export default function RelatorioCompleto() {
         acc[category.id] = category.nome;
         return acc;
       }, {});
+      const normalizeLabel = (value: string | null | undefined) =>
+        (value ?? '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .trim()
+          .toLowerCase();
 
       const subMap = subcategorias.reduce<Record<string, { nome: string; catId: string }>>((acc, subcategory) => {
         acc[subcategory.id] = { nome: subcategory.nome, catId: subcategory.categoria_id };
@@ -335,7 +341,11 @@ export default function RelatorioCompleto() {
       }, {});
 
       const investCatId = categorias.find((category) => category.nome === 'Investimentos')?.id;
-      const cartaoCatId = categorias.find((category) => category.nome.toLowerCase() === 'cartão de crédito')?.id;
+      const cartaoCatIds = new Set(
+        categorias
+          .filter((category) => normalizeLabel(category.nome) === 'cartao de credito')
+          .map((category) => category.id),
+      );
       const dateColumn = tipoData === 'competencia' ? 'competencia' : 'data_pagamento';
       const { start: inicioDia, end: fimDia } = {
         start: getMonthDateRange(dataInicio).start,
@@ -389,7 +399,9 @@ export default function RelatorioCompleto() {
         }));
 
       const despesasBase = allDespesas?.filter(
-        (despesa) => despesa.categoria_id !== investCatId && despesa.categoria_id !== cartaoCatId,
+        (despesa) =>
+          despesa.categoria_id !== investCatId &&
+          (!despesa.categoria_id || !cartaoCatIds.has(despesa.categoria_id)),
       ) ?? [];
       const despesas = [...despesasBase, ...itensFaturaFiltrados];
       const investimentos = allDespesas?.filter((despesa) => despesa.categoria_id === investCatId) ?? [];

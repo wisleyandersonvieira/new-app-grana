@@ -35,6 +35,12 @@ export default function RelatorioDetalhado() {
   const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string }[]>([]);
   const [sortKey, setSortKey] = useState<keyof Row>('data_pagamento');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const normalizeLabel = (value: string | null | undefined) =>
+    (value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
 
   useEffect(() => {
     if (!user) return;
@@ -53,6 +59,11 @@ export default function RelatorioDetalhado() {
     categorias.forEach(c => { catMap[c.id] = c.nome; });
     const subMap: Record<string, string> = {};
     subcategorias.forEach(s => { subMap[s.id] = s.nome; });
+    const cartaoCatIds = new Set(
+      categorias
+        .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
+        .map(c => c.id),
+    );
 
     const result: Row[] = [];
 
@@ -62,9 +73,7 @@ export default function RelatorioDetalhado() {
     if (filterSub !== 'all') rq = rq.eq('subcategoria_id', filterSub);
 
     // Despesas (excl Cartão De Crédito)
-    const cartaoCatId = categorias.find(c => c.nome.toLowerCase() === 'cartão de crédito')?.id;
     let dq = supabase.from('despesas').select('*').eq('usuario_id', user.id).gte('competencia', compInicio).lte('competencia', compFim);
-    if (cartaoCatId) dq = dq.neq('categoria_id', cartaoCatId);
     if (filterCat !== 'all') dq = dq.eq('categoria_id', filterCat);
     if (filterSub !== 'all') dq = dq.eq('subcategoria_id', filterSub);
 
@@ -89,6 +98,7 @@ export default function RelatorioDetalhado() {
     });
 
     despesas?.forEach(d => {
+      if (d.categoria_id && cartaoCatIds.has(d.categoria_id)) return;
       result.push({
         data_pagamento: d.data_pagamento ?? d.data ?? '',
         descricao: d.descricao ?? '',

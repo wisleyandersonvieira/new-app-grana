@@ -18,6 +18,12 @@ export default function RelatorioPorCategoria() {
   const ano = comp.split('-')[0];
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
+  const normalizeLabel = (value: string | null | undefined) =>
+    (value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
 
   const generate = async () => {
     if (!user) return;
@@ -30,12 +36,15 @@ export default function RelatorioPorCategoria() {
 
     const catMap: Record<string, string> = {};
     categorias?.forEach(c => { catMap[c.id] = c.nome; });
-
-    const cartaoCatId = categorias?.find(c => c.nome === 'Cartão De Crédito')?.id;
+    const cartaoCatIds = new Set(
+      (categorias ?? [])
+        .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
+        .map(c => c.id),
+    );
 
     const totals: Record<string, number> = {};
     despesas?.forEach(d => {
-      if (d.categoria_id === cartaoCatId) return; // exclude
+      if (d.categoria_id && cartaoCatIds.has(d.categoria_id)) return; // exclude
       const nome = d.categoria_id ? (catMap[d.categoria_id] ?? 'Sem categoria') : 'Sem categoria';
       totals[nome] = (totals[nome] ?? 0) + d.valor;
     });

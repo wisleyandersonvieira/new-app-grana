@@ -21,6 +21,12 @@ export default function Metas() {
   const ano = comp.split('-')[0];
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
+  const normalizeLabel = (value: string | null | undefined) =>
+    (value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
 
   useEffect(() => {
     if (!user) return;
@@ -35,7 +41,11 @@ export default function Metas() {
 
       const catMap: Record<string, string> = {};
       categorias?.forEach(c => { catMap[c.id] = c.nome; });
-      const cartaoCatId = categorias?.find(c => c.nome === 'Cartão De Crédito')?.id;
+      const cartaoCatIds = new Set(
+        (categorias ?? [])
+          .filter(c => normalizeLabel(c.nome) === 'cartao de credito')
+          .map(c => c.id),
+      );
 
       const totalReceitas = receitas?.reduce((s, r) => s + r.valor, 0) ?? 0;
       const totalDespesas = (despesas?.reduce((s, d) => s + d.valor, 0) ?? 0);
@@ -43,7 +53,7 @@ export default function Metas() {
       // Category totals: despesas (excl cartão) + itens_fatura
       const catTotals: Record<string, number> = {};
       despesas?.forEach(d => {
-        if (d.categoria_id === cartaoCatId) return;
+        if (d.categoria_id && cartaoCatIds.has(d.categoria_id)) return;
         if (d.categoria_id) catTotals[d.categoria_id] = (catTotals[d.categoria_id] ?? 0) + d.valor;
       });
       itensFatura?.forEach(it => {
