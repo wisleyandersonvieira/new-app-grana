@@ -369,10 +369,16 @@ export default function RelatorioCompleto() {
       }
       if (selectedCats.length < categorias.length) despesaQuery = despesaQuery.in('categoria_id', selectedCats);
 
+      // itens_fatura.competencia is DATE (YYYY-MM-01). Apply server-side range filter
+      // to avoid hitting Supabase's default 1000-row limit when accounts have many items.
+      const itensCompStart = `${dataInicio}-01`;
+      const itensCompEnd = `${dataFim}-31`;
       let itensFaturaQuery = supabase
         .from('itens_fatura')
         .select('fatura_id, valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')
-        .eq('usuario_id', user.id);
+        .eq('usuario_id', user.id)
+        .gte('competencia', itensCompStart)
+        .lte('competencia', itensCompEnd);
       if (selectedCats.length < categorias.length) itensFaturaQuery = itensFaturaQuery.in('categoria_id', selectedCats);
 
       let pagamentosFaturaQuery = supabase
