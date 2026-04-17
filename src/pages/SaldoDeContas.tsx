@@ -25,14 +25,35 @@ export default function SaldoDeContas() {
       .then(({ data }) => { if (data) { setContas(data); setSelectedContas(data.map(c => c.id)); } });
   }, [user]);
 
+  const fetchAll = async <T,>(builder: () => any): Promise<T[]> => {
+    const pageSize = 1000;
+    let from = 0;
+    const all: T[] = [];
+    while (true) {
+      const { data, error } = await builder().range(from, from + pageSize - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      all.push(...(data as T[]));
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  };
+
   const generate = async () => {
     if (!user) return;
     const filtered = contas.filter(c => selectedContas.includes(c.id));
 
-    const [{ data: receitas }, { data: despesas }, { data: transf }] = await Promise.all([
-      supabase.from('receitas').select('conta_id, valor').eq('usuario_id', user.id).eq('paga', true).lte('data_pagamento', dataRef),
-      supabase.from('despesas').select('conta_id, valor').eq('usuario_id', user.id).eq('paga', true).lte('data_pagamento', dataRef),
-      supabase.from('transferencias').select('conta_origem_id, conta_destino_id, valor').eq('usuario_id', user.id).lte('data', dataRef),
+    const [receitas, despesas, transf] = await Promise.all([
+      fetchAll<{ conta_id: string | null; valor: number }>(() =>
+        supabase.from('receitas').select('conta_id, valor').eq('usuario_id', user.id).eq('paga', true).lte('data_pagamento', dataRef),
+      ),
+      fetchAll<{ conta_id: string | null; valor: number }>(() =>
+        supabase.from('despesas').select('conta_id, valor').eq('usuario_id', user.id).eq('paga', true).lte('data_pagamento', dataRef),
+      ),
+      fetchAll<{ conta_origem_id: string | null; conta_destino_id: string | null; valor: number }>(() =>
+        supabase.from('transferencias').select('conta_origem_id, conta_destino_id, valor').eq('usuario_id', user.id).lte('data', dataRef),
+      ),
     ]);
 
     const res: ContaSaldo[] = filtered.map(c => {
