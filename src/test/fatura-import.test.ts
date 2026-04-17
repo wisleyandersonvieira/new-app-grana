@@ -157,6 +157,138 @@ describe('fatura import helpers', () => {
       expect(items).toHaveLength(1);
       expect(items[0].valor).toBe(-52.50);
     });
+
+    it('ignora prefixos de ícone de pagamento ())) do símbolo NFC/contactless)', () => {
+      // pdfjs-dist extrai o ícone de pagamento sem contato do Itaú como ")))".
+      // Esses caracteres aparecem antes da data e quebravam a detecção de data.
+      const text = withHeader(
+        [
+          '22/08 VIVARA MOR 08/10 930,15',
+          'DIVERSOS .SAO PAULO',
+          ')))02/03 AV SAO PAULO-CT 02/02 269,88',
+          'ALIMENTAÇÃO .MARINGA',
+          '@10/03 LOVABLE 167,74',
+          'DIVERSOS .Osasco',
+        ].join('\n'),
+      );
+
+      const items = parseStatementText(text, CTX);
+      expect(items.length).toBeGreaterThanOrEqual(3);
+
+      const avSaoPaulo = items.find((i) => i.descricao_normalizada.includes('av sao paulo'));
+      expect(avSaoPaulo).toBeDefined();
+      expect(avSaoPaulo?.valor).toBe(269.88);
+      expect(avSaoPaulo?.parcelas).toBe('2/2');
+
+      const lovable = items.find((i) => i.descricao_normalizada.includes('lovable'));
+      expect(lovable).toBeDefined();
+      expect(lovable?.valor).toBe(167.74);
+    });
+
+    it('extrai parcelas de nomes truncados colados ao código (ex: DROGARI02/02)', () => {
+      // Itaú trunca o nome do estabelecimento e cola o código de parcela diretamente,
+      // sem espaço. Ex: "FARMACIA E DROGARI02/02" em vez de "DROGARI 02/02".
+      const text = withHeader(
+        [
+          '18/02 FARMACIA E DROGARI02/02 182,01',
+          'SAÚDE .MARINGA',
+          '29/01 DEVILLE HOTEIS E T03/03 634,80',
+          'TURISMO E ENTRETENIM.CAMPO GRANDE',
+          '21/12 7076 SHOP BATEL C04/04 487,89',
+          'VESTUÁRIO .CURITIBA',
+        ].join('\n'),
+      );
+
+      const items = parseStatementText(text, CTX);
+      expect(items).toHaveLength(3);
+
+      const farmacia = items.find((i) => i.descricao_normalizada.includes('farmacia'));
+      expect(farmacia?.parcelas).toBe('2/2');
+      expect(farmacia?.valor).toBe(182.01);
+
+      const deville = items.find((i) => i.descricao_normalizada.includes('deville'));
+      expect(deville?.parcelas).toBe('3/3');
+
+      const shopBatel = items.find((i) => i.descricao_normalizada.includes('shop batel'));
+      expect(shopBatel?.parcelas).toBe('4/4');
+    });
+
+    it('filtra linhas BRL da seção de lançamentos internacionais', () => {
+      // A seção "Lançamentos internacionais" repete cada transação com o detalhamento
+      // em moeda original. Linhas com "BRL" são breakdown — não devem virar transações.
+      const text = withHeader(
+        [
+          '10/03 LOVABLE 167,74',
+          'DOVER 160,50 BRL 30,61',
+          'Dólar de Conversão R$ 5,48',
+          '07/03 KANPAI 101,90',
+          'ALIMENTAÇÃO .MARINGA',
+        ].join('\n'),
+      );
+
+      const items = parseStatementText(text, CTX);
+      // LOVABLE e KANPAI devem ser capturados; a linha BRL deve ser ignorada
+      expect(items).toHaveLength(2);
+      expect(items.find((i) => i.descricao_normalizada.includes('lovable'))?.valor).toBe(167.74);
+      expect(items.find((i) => i.descricao_normalizada.includes('kanpai'))?.valor).toBe(101.90);
+    });
+
+    it('parseia fatura completa com múltiplos cartões e lançamentos internacionais', () => {
+      // Simula o texto extraído de uma fatura Itaú real com:
+      // - múltiplos titulares/cartões
+      // - ícones NFC antes de datas
+      // - nomes truncados com parcelas coladas
+      // - seção de lançamentos internacionais (duplicatas + linhas BRL/USD)
+      const text = withHeader(
+        [
+          // JESSICA R S VIEIRA (final 8275)
+          '22/08 VIVARA MOR 08/10 930,15',
+          'DIVERSOS .SAO PAULO',
+          '18/02 FARMACIA E DROGARI02/02 182,01',
+          'SAÚDE .MARINGA',
+          ')))02/03 AV SAO PAULO-CT 02/02 269,88',
+          'ALIMENTAÇÃO .MARINGA',
+          '03/03 AMAZON MKTPL*BE8ZQ41X1 494,54',
+          'SEATTLE 87,53 USD 87,53',
+          'Dólar de Conversão R$ 5,65',
+          '07/03 KANPAI 101,90',
+          'ALIMENTAÇÃO .MARINGA',
+          '03/04 ESTORNO DE ANUIDADE DIF - 52,50',
+          // Summary lines – must be ignored
+          'Lançamentos no cartão (final 8275) 11.096,14',
+          // JESSICA R S VIEIRA (final 9286) – international section
+          'Lançamentos internacionais',
+          '10/03 LOVABLE 167,74',
+          'DOVER 160,50 BRL 30,61',
+          'Dólar de Conversão R$ 5,48',
+          '18/03 UI BAKERY INC. 66,36',
+          'AUSTIN 12,00 USD 12,00',
+          'Dólar de Conversão R$ 5,53',
+          'Total transações inter. em R$ 717,44',
+          'Repasse de IOF em R$ 25,14',
+          'Total lançamentos inter. em R$ 742,58',
+        ].join('\n'),
+      );
+
+      const items = parseStatementText(text, CTX);
+
+      // Core transactions must be present
+      expect(items.find((i) => i.descricao_normalizada.includes('vivara'))).toBeDefined();
+      expect(items.find((i) => i.descricao_normalizada.includes('farmacia'))).toBeDefined();
+      expect(items.find((i) => i.descricao_normalizada.includes('av sao paulo'))).toBeDefined();
+      expect(items.find((i) => i.descricao_normalizada.includes('amazon'))).toBeDefined();
+      expect(items.find((i) => i.descricao_normalizada.includes('kanpai'))).toBeDefined();
+      expect(items.find((i) => i.descricao_normalizada.includes('lovable'))).toBeDefined();
+
+      // Estorno deve ter valor negativo
+      const estorno = items.find((i) => i.descricao_normalizada.includes('estorno'));
+      expect(estorno?.valor).toBe(-52.50);
+
+      // Nenhuma transação espúria de linhas BRL/USD/totais
+      expect(items.find((i) => i.descricao_normalizada.includes('dover'))).toBeUndefined();
+      expect(items.find((i) => i.descricao_normalizada.includes('seattle'))).toBeUndefined();
+      expect(items.find((i) => i.descricao_normalizada.includes('austin'))).toBeUndefined();
+    });
   });
 });
 

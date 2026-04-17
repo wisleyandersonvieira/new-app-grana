@@ -21,6 +21,7 @@ const ITAU_NOISE = [
   /repasse.*iof/,                             // "Repasse de IOF em R$"
   /dolar.*conversao|conversao.*dolar/,        // "Dólar de Conversão R$ 5,65"
   /\busd\b/,                                  // lines with raw USD amounts
+  /\bbrl\b/,                                  // breakdown lines from intl section (e.g. "DOVER 160,50 BRL 30,61")
   /proxima fatura/,                           // "Próxima fatura"
   /demais faturas/,                           // "Demais faturas"
 ];
@@ -50,9 +51,13 @@ export class ItauParser extends BaseStatementParser {
     const currentText = this.sliceCurrentPeriod(text);
 
     // ── 2. Get clean candidate tokens (noise-filtered) ───────────────────────
-    const tokens = this.getCandidateLines(currentText).filter(
-      (line) => !isItauNoise(line) && !CATEGORY_LABEL.test(line),
-    );
+    // Strip leading payment-method icon characters that pdfjs-dist extracts
+    // from Itaú PDFs (e.g. the NFC/contactless symbol renders as ")))").
+    // These prefixes appear before the transaction date and break date detection.
+    const tokens = this.getCandidateLines(currentText)
+      .map((line) => line.replace(/^[^a-zA-Z\u00C0-\u024F\d-]+/, '').trim())
+      .filter((line) => line.length > 4)
+      .filter((line) => !isItauNoise(line) && !CATEGORY_LABEL.test(line));
 
     // ── 3. Try standard line parsing ─────────────────────────────────────────
     // Works when the PDF extractor produces one complete transaction per line,

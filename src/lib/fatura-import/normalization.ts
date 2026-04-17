@@ -1,4 +1,8 @@
-const INSTALLMENT_PATTERN = /\b0?([1-9]\d?)\/0?([1-9]\d?)\b/g;
+// Leading \b omitted intentionally: Itaú truncates merchant names and appends
+// the installment code directly (e.g. "FARMACIA E DROGARI02/02"), leaving no
+// word boundary before the digits. The trailing \b is kept to avoid matching
+// partial numbers inside longer digit sequences.
+const INSTALLMENT_PATTERN = /0?([1-9]\d?)\/0?([1-9]\d?)\b/g;
 
 export function stripAccents(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
