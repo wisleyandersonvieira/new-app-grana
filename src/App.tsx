@@ -33,6 +33,7 @@ import UsuariosPage from "./pages/Usuarios";
 import RelatorioPorCategoria from "./pages/RelatorioPorCategoria";
 import RelatorioDetalhado from "./pages/RelatorioDetalhado";
 import RelatorioCompleto from "./pages/RelatorioCompleto";
+import RelatorioContas from "./pages/RelatorioContas";
 import ComparativoMensal from "./pages/ComparativoMensal";
 import SaldoDeContas from "./pages/SaldoDeContas";
 import Extratos from "./pages/Extratos";
@@ -87,6 +88,7 @@ const App = () => (
                       <Route path="/relatorios/categoria" element={<RelatorioPorCategoria />} />
                       <Route path="/relatorios/detalhado" element={<RelatorioDetalhado />} />
                       <Route path="/relatorios/completo" element={<RelatorioCompleto />} />
+                      <Route path="/relatorios/contas" element={<RelatorioContas />} />
                       <Route path="/relatorios/comparativo" element={<ComparativoMensal />} />
                       <Route path="/relatorios/saldo" element={<SaldoDeContas />} />
                       <Route path="/relatorios/extratos" element={<Extratos />} />
