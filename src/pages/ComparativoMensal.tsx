@@ -110,10 +110,13 @@ export default function ComparativoMensal() {
       });
     }
 
+    // Server-side competencia range filter prevents hitting Supabase's 1000-row default limit.
     let iq = supabase
       .from('itens_fatura')
       .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
-      .eq('usuario_id', user.id);
+      .eq('usuario_id', user.id)
+      .gte('competencia', `${dataInicio}-01`)
+      .lte('competencia', `${dataFim}-31`);
     if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
     const { data: itens } = await iq;
 
