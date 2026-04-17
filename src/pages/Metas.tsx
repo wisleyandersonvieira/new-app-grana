@@ -25,12 +25,15 @@ export default function Metas() {
   useEffect(() => {
     if (!user) return;
     const fetchMetas = async () => {
+      // itens_fatura.competencia is a DATE column (YYYY-MM-01), use range matching
+      const compStart = `${comp}-01`;
+      const compEnd = `${comp}-31`;
       const [{ data: metas }, { data: categorias }, { data: receitas }, { data: despesas }, { data: itensFatura }] = await Promise.all([
         supabase.from('metas').select('*').eq('usuario_id', user.id).eq('mes_ano', comp),
         supabase.from('categorias').select('id, nome').eq('usuario_id', user.id),
         supabase.from('receitas').select('valor, paga').eq('usuario_id', user.id).eq('competencia', comp).eq('paga', true),
         supabase.from('despesas').select('valor, paga, categoria_id').eq('usuario_id', user.id).eq('competencia', comp).eq('paga', true),
-        supabase.from('itens_fatura').select('valor, categoria_id').eq('usuario_id', user.id).eq('competencia', comp),
+        supabase.from('itens_fatura').select('valor, categoria_id').eq('usuario_id', user.id).gte('competencia', compStart).lte('competencia', compEnd),
       ]);
 
       const catMap: Record<string, string> = {};
@@ -51,6 +54,7 @@ export default function Metas() {
         if (d.categoria_id) catTotals[d.categoria_id] = (catTotals[d.categoria_id] ?? 0) + d.valor;
       });
       itensFatura?.forEach(it => {
+        if (it.categoria_id && cartaoCatIds.has(it.categoria_id)) return;
         if (it.categoria_id) catTotals[it.categoria_id] = (catTotals[it.categoria_id] ?? 0) + it.valor;
       });
 

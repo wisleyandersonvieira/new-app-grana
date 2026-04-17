@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 
-export const CREDIT_CARD_CATEGORY_NAME = 'Cartão De Crédito';
+export const CREDIT_CARD_CATEGORY_NAME = 'Cartão de Crédito';
 export const CONSOLIDATED_INVOICE_SUBCATEGORY_NAME = 'Fatura Consolidada';
 
 type CategoryLike = {
