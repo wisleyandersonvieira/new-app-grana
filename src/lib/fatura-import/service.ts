@@ -36,13 +36,7 @@ export function parseStatementText(text: string, context: ParserContext): Parsed
     throw new Error('Ainda não reconhecemos o layout desta fatura. No momento suportamos Itaú e Sicoob.');
   }
 
-  const items = parser.parse(text, context);
-  const uniqueItems = new Map<string, ParsedStatementItem>();
-  items.forEach((item) => {
-    const key = `${item.data_compra ?? 'sem-data'}|${item.valor}|${item.descricao_normalizada}`;
-    if (!uniqueItems.has(key)) uniqueItems.set(key, item);
-  });
-  return [...uniqueItems.values()];
+  return parser.parse(text, context);
 }
 
 async function fetchSuggestionRows(userId: string, cartaoId: string): Promise<SuggestionRow[]> {

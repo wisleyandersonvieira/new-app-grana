@@ -105,6 +105,21 @@ describe('fatura import helpers', () => {
     expect(identifyBankFromText('Sicoob Card\nResumo da fatura\nMovimentações da conta')).toBe('sicoob');
   });
 
+  it('não elimina lançamentos legítimos repetidos com mesma descrição e valor', () => {
+    const items = parseStatementText(
+      [
+        'Itaú',
+        'Resumo da fatura',
+        'Lançamentos: compras e saques',
+        '10/03 LOVABLE 167,74',
+        '10/03 LOVABLE 167,74',
+      ].join('\n'),
+      { competencia: '2026-03' },
+    );
+
+    expect(items).toHaveLength(2);
+  });
+
   it('parseia linhas de lancamento com data, valor e parcelas', () => {
     const items = parseStatementText(
       [

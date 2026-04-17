@@ -199,8 +199,13 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
         continue;
       }
 
-      if (isItauFutureInstallmentSectionStart(candidate) || isItauFutureSectionSoftStop(candidate)) {
+      if (isItauFutureInstallmentSectionStart(candidate)) {
         break;
+      }
+
+      if (isItauFutureSectionSoftStop(candidate)) {
+        lookahead += 1;
+        continue;
       }
 
       if (isAmountOnlyLine(candidate)) {
@@ -247,7 +252,7 @@ export function preprocessItauText(text: string): string[] {
 
   for (const line of sourceLines) {
     if (isItauFutureInstallmentSectionStart(line)) break;
-    if (isItauFutureSectionSoftStop(line)) break;
+    if (isItauFutureSectionSoftStop(line)) continue;
     if (isIgnorableItauLine(line)) continue;
     cleanedLines.push(line);
   }
