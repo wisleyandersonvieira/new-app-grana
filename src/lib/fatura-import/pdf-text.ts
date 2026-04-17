@@ -10,8 +10,9 @@ type TextToken = { x: number; y: number; str: string; width: number };
 /**
  * Splits tokens into columns when a page has a clear two-column layout.
  * Detects the split by looking for a gap in X positions.
+ * Exported for unit testing.
  */
-function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][] {
+export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][] {
   if (tokens.length === 0) return [[]];
 
   const midpoint = pageWidth / 2;
@@ -35,15 +36,29 @@ function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][]
   visualRows.push(curRow);
 
   // 2) Detect whether the page really has two independent columns.
-  // We use the leftmost token of each visual row so one-column rows with amounts
-  // far to the right do not falsely count as two-column pages.
+  //
+  // Problem with the naive "minX" approach: when both columns share the same Y
+  // (as in the Itaú two-column transaction table), the leftmost token of each
+  // visual row always belongs to the LEFT column, so rightRowCount never grows
+  // and the two-column layout is never detected.
+  //
+  // Fix: count left and right independently.
+  // - leftRowCount  : rows whose leftmost token starts on the left half.
+  // - rightRowCount : rows that have ≥2 tokens centred on the right half.
+  //   A single far-right token (e.g. a right-aligned amount on a one-column page)
+  //   does NOT qualify — we require at least two right-side tokens to be sure
+  //   there is a real second column (date + description, or description + amount).
   let leftRowCount = 0;
   let rightRowCount = 0;
   for (const row of visualRows) {
     const minX = Math.min(...row.map((t) => t.x));
     if (minX < midpoint - 10) {
       leftRowCount += 1;
-    } else {
+    }
+    const rightSideCount = row.filter(
+      (t) => t.x + t.width / 2 >= midpoint,
+    ).length;
+    if (rightSideCount >= 2) {
       rightRowCount += 1;
     }
   }

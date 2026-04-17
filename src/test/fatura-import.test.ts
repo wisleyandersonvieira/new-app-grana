@@ -1,6 +1,66 @@
 import { describe, expect, it } from 'vitest';
 import { extractInstallmentInfo, normalizeInstallmentText, normalizeStatementDescription } from '@/lib/fatura-import/normalization';
 import { identifyBankFromText, parseStatementText } from '@/lib/fatura-import/service';
+import { splitIntoColumns } from '@/lib/fatura-import/pdf-text';
+
+// ── splitIntoColumns ──────────────────────────────────────────────────────────
+
+describe('splitIntoColumns', () => {
+  const PAGE_WIDTH = 595; // A4 em pontos PDF
+  const MID = PAGE_WIDTH / 2; // 297,5
+
+  it('não divide página de coluna única (apenas valor à direita por linha)', () => {
+    // Cada linha: data + descrição à esquerda, valor bem à direita
+    // → somente 1 token no lado direito por linha → NÃO é duas colunas
+    const tokens = [
+      { x: 36, y: 700, str: '22/08', width: 28 },
+      { x: 70, y: 700, str: 'VIVARA MOR', width: 80 },
+      { x: 520, y: 700, str: '930,15', width: 40 },
+      { x: 36, y: 685, str: '28/08', width: 28 },
+      { x: 70, y: 685, str: 'LATAM AIR', width: 70 },
+      { x: 520, y: 685, str: '1.765,52', width: 50 },
+      { x: 36, y: 670, str: '07/03', width: 28 },
+      { x: 70, y: 670, str: 'KANPAI', width: 55 },
+      { x: 520, y: 670, str: '101,90', width: 40 },
+    ];
+    const cols = splitIntoColumns(tokens, PAGE_WIDTH);
+    expect(cols).toHaveLength(1); // sem split
+  });
+
+  it('divide corretamente página com duas colunas de transações (layout Itaú)', () => {
+    // Itaú: transações das duas colunas ficam na MESMA linha Y.
+    // O bug anterior usava minX da linha → sempre era o da coluna esquerda,
+    // então rightRowCount nunca crescia e o split era ignorado.
+    const makeRow = (y: number, leftStr: string, rightStr: string) => [
+      { x: 36,        y, str: leftStr.slice(0, 5),  width: 28 },  // data esq
+      { x: 70,        y, str: leftStr.slice(6),      width: 120 }, // desc esq
+      { x: 250,       y, str: '930,15',               width: 40 },  // valor esq
+      { x: MID + 20,  y, str: rightStr.slice(0, 5),  width: 28 },  // data dir
+      { x: MID + 55,  y, str: rightStr.slice(6),     width: 120 }, // desc dir
+      { x: MID + 230, y, str: '435,00',               width: 40 },  // valor dir
+    ];
+
+    const tokens = [
+      ...makeRow(700, '22/08 VIVARA MOR', '03/03 ARENA TENNISTORM'),
+      ...makeRow(685, '28/08 LATAM AIR', '04/03 KANPAI'),
+      ...makeRow(670, '07/03 POSTO PRES', '05/03 DUO MERCATO'),
+      ...makeRow(655, '08/03 JOAO PAUL', '06/03 OH WHEY'),
+    ];
+
+    const cols = splitIntoColumns(tokens, PAGE_WIDTH);
+    expect(cols).toHaveLength(2); // dividido em 2 colunas
+
+    // Coluna esquerda: todos os tokens com centro < midpoint
+    const leftCol = cols[0];
+    expect(leftCol.every((t) => t.x + t.width / 2 < MID)).toBe(true);
+
+    // Coluna direita: todos os tokens com centro >= midpoint
+    const rightCol = cols[1];
+    expect(rightCol.every((t) => t.x + t.width / 2 >= MID)).toBe(true);
+  });
+});
+
+// ── fatura import helpers ─────────────────────────────────────────────────────
 
 describe('fatura import helpers', () => {
   it('normaliza descricoes e extrai parcelas', () => {
