@@ -71,7 +71,9 @@ export default function RelatorioDetalhado() {
     if (filterCat !== 'all') dq = dq.eq('categoria_id', filterCat);
     if (filterSub !== 'all') dq = dq.eq('subcategoria_id', filterSub);
 
-    // Itens fatura
+    // Itens fatura - competencia is a DATE column (YYYY-MM-01)
+    const compInicioDate = `${compInicio}-01`;
+    const compFimDate = `${compFim}-31`;
     let iq = supabase
       .from('itens_fatura')
       .select('valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')
@@ -105,7 +107,10 @@ export default function RelatorioDetalhado() {
 
     ((itens ?? []) as ItemFaturaReport[])
       .filter((it) => {
-        const compRef = it.faturas_cartao?.mes_ano ?? it.competencia;
+        // Exclude items somehow flagged with the credit card umbrella category
+        if (it.categoria_id && cartaoCatIds.has(it.categoria_id)) return false;
+        // mes_ano is YYYY-MM; competencia is DATE (YYYY-MM-DD). Normalize both to YYYY-MM.
+        const compRef = (it.faturas_cartao?.mes_ano ?? it.competencia ?? '').substring(0, 7);
         return Boolean(compRef && compRef >= compInicio && compRef <= compFim);
       })
       .forEach(it => {

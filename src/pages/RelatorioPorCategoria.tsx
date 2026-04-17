@@ -21,10 +21,18 @@ export default function RelatorioPorCategoria() {
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
   const generate = async () => {
     if (!user) return;
-    // Fetch despesas (excluding "Cartão De Crédito") + itens_fatura for the competencia
+    // Fetch despesas (excluding "Cartão de Crédito") + itens_fatura for the competencia
+    // itens_fatura.competencia is a DATE, so we use range matching for the month
+    const compStart = `${comp}-01`;
+    const compEnd = `${comp}-31`;
     const [{ data: despesas }, { data: itensFatura }, { data: categorias }] = await Promise.all([
       supabase.from('despesas').select('categoria_id, valor').eq('usuario_id', user.id).eq('competencia', comp),
-      supabase.from('itens_fatura').select('categoria_id, valor').eq('usuario_id', user.id).eq('competencia', comp),
+      supabase
+        .from('itens_fatura')
+        .select('categoria_id, valor, competencia, faturas_cartao(mes_ano)')
+        .eq('usuario_id', user.id)
+        .gte('competencia', compStart)
+        .lte('competencia', compEnd),
       supabase.from('categorias').select('id, nome').eq('usuario_id', user.id),
     ]);
 
@@ -43,6 +51,8 @@ export default function RelatorioPorCategoria() {
       totals[nome] = (totals[nome] ?? 0) + d.valor;
     });
     itensFatura?.forEach(it => {
+      // Skip if item is somehow categorized as the credit card umbrella category
+      if (it.categoria_id && cartaoCatIds.has(it.categoria_id)) return;
       const nome = it.categoria_id ? (catMap[it.categoria_id] ?? 'Sem categoria') : 'Sem categoria';
       totals[nome] = (totals[nome] ?? 0) + it.valor;
     });
