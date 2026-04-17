@@ -44,21 +44,25 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
   //
   // Fix: count left and right independently.
   // - leftRowCount  : rows whose leftmost token starts on the left half.
-  // - rightRowCount : rows that have ≥2 tokens centred on the right half.
-  //   A single far-right token (e.g. a right-aligned amount on a one-column page)
-  //   does NOT qualify — we require at least two right-side tokens to be sure
-  //   there is a real second column (date + description, or description + amount).
+  // - rightRowCount : rows that have a token STARTING within the first 30% of
+  //   the right half (i.e. t.x in [midpoint, midpoint + 0.3*pageWidth]).
+  //
+  //   A single far-right amount token on a one-column page starts near the right
+  //   edge (x ≈ 85–90% of pageWidth), well outside this window, so it does NOT
+  //   qualify. A real second-column token (date/description) starts right after
+  //   the midpoint and IS detected even if it is the only token on that side.
   let leftRowCount = 0;
   let rightRowCount = 0;
+  const rightColBoundary = midpoint + pageWidth * 0.3;
   for (const row of visualRows) {
     const minX = Math.min(...row.map((t) => t.x));
     if (minX < midpoint - 10) {
       leftRowCount += 1;
     }
-    const rightSideCount = row.filter(
-      (t) => t.x + t.width / 2 >= midpoint,
-    ).length;
-    if (rightSideCount >= 2) {
+    const hasRightColStart = row.some(
+      (t) => t.x >= midpoint && t.x < rightColBoundary,
+    );
+    if (hasRightColStart) {
       rightRowCount += 1;
     }
   }
