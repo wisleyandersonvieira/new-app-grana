@@ -1,22 +1,15 @@
-import { extractInstallmentInfo, normalizeStatementDescription, stripAccents } from '../normalization';
+import {
+  extractInstallmentInfo,
+  inferTransactionDate,
+  normalizeStatementDescription,
+  parseBrazilianCurrency,
+  stripAccents,
+} from '../normalization';
 import type { ParsedStatementItem, ParserContext, StatementParser } from '../types';
 
 // Matches a positive or negative Brazilian currency value at the end of a line.
 // Also handles "- 52,50" (minus sign separated by space, as used in Itaú reversals).
 const AMOUNT_AT_END_PATTERN = /(-\s*\d[\d.]*,\d{2}|\d[\d.]*,\d{2})$/;
-
-function parseAmount(raw: string): number {
-  const normalized = raw.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
-  return Number.parseFloat(normalized);
-}
-
-function inferPurchaseDate(dayMonth: string, competencia: string): string | null {
-  const [year, month] = competencia.split('-').map(Number);
-  const [day, purchaseMonth] = dayMonth.split('/').map(Number);
-  if (!year || !month || !day || !purchaseMonth) return null;
-  const candidateYear = purchaseMonth > month ? year - 1 : year;
-  return `${candidateYear}-${String(purchaseMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
 
 function isNoiseLine(line: string): boolean {
   // Strip accents so patterns work regardless of diacritics in extracted PDF text
@@ -73,7 +66,7 @@ export abstract class BaseStatementParser implements StatementParser {
       const lineWithoutValue = line.slice(0, line.length - valueMatch[1].length).trim();
       const dateMatch = lineWithoutValue.match(/^(\d{2}\/\d{2})\s+(.+)$/);
       const rawDescription = dateMatch ? dateMatch[2].trim() : lineWithoutValue;
-      const purchaseDate = dateMatch ? inferPurchaseDate(dateMatch[1], context.competencia) : null;
+      const purchaseDate = dateMatch ? inferTransactionDate(dateMatch[1], context.competencia) : null;
       const { parcelas } = extractInstallmentInfo(rawDescription);
       const descricao_normalizada = normalizeStatementDescription(rawDescription);
       if (!descricao_normalizada) continue;
@@ -82,7 +75,7 @@ export abstract class BaseStatementParser implements StatementParser {
         descricao_original: rawDescription,
         descricao_normalizada,
         data_compra: purchaseDate,
-        valor: parseAmount(valueMatch[1]),
+        valor: parseBrazilianCurrency(valueMatch[1]),
         parcelas,
         banco_origem: this.bank,
         observacao_parser: null,

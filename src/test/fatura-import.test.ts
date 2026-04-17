@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { extractInstallmentInfo, normalizeInstallmentText, normalizeStatementDescription } from '@/lib/fatura-import/normalization';
+import {
+  extractInstallmentInfo,
+  inferTransactionDate,
+  normalizeInstallmentText,
+  normalizeStatementDescription,
+  parseBrazilianCurrency,
+} from '@/lib/fatura-import/normalization';
 import { identifyBankFromText, parseStatementText } from '@/lib/fatura-import/service';
 import { splitIntoColumns } from '@/lib/fatura-import/pdf-text';
+import {
+  cleanItauNoisePrefix,
+  extractItauTransactionParts,
+  isItauCardSummaryLine,
+  isItauCategoryCityLine,
+  isItauFutureInstallmentSectionStart,
+  isItauInternationalMetadataLine,
+  isItauTransactionLine,
+  parseItauStatement,
+  preprocessItauText,
+  rebuildBrokenItauTransactionLines,
+} from '@/lib/fatura-import/parsers/itau-helpers';
 
 // ── splitIntoColumns ──────────────────────────────────────────────────────────
 
@@ -72,6 +90,16 @@ describe('fatura import helpers', () => {
     expect(normalizeStatementDescription('APPLE.COM/BILL 01/10')).toBe('apple com bill');
   });
 
+  it('converte moeda brasileira e infere datas por competencia', () => {
+    expect(parseBrazilianCurrency('930,15')).toBe(930.15);
+    expect(parseBrazilianCurrency('1.765,52')).toBe(1765.52);
+    expect(parseBrazilianCurrency('- 52,50')).toBe(-52.5);
+    expect(parseBrazilianCurrency('R$ 1.234,56')).toBe(1234.56);
+
+    expect(inferTransactionDate('07/03', '2026-03')).toBe('2026-03-07');
+    expect(inferTransactionDate('22/12', '2026-01')).toBe('2025-12-22');
+  });
+
   it('identifica o banco suportado', () => {
     expect(identifyBankFromText('Itaú\nResumo da fatura\nLançamentos: compras e saques')).toBe('itau');
     expect(identifyBankFromText('Sicoob Card\nResumo da fatura\nMovimentações da conta')).toBe('sicoob');
@@ -97,6 +125,98 @@ describe('fatura import helpers', () => {
       valor: 1234.56,
       parcelas: '8/8',
       banco_origem: 'itau',
+    });
+  });
+
+  describe('helpers específicos do Itaú', () => {
+    const ctx = { competencia: '2026-03' };
+
+    it('classifica linhas do Itaú corretamente', () => {
+      expect(cleanItauNoisePrefix(')))02/03 AV SAO PAULO-CT 02/02 269,88')).toBe('02/03 AV SAO PAULO-CT 02/02 269,88');
+      expect(cleanItauNoisePrefix('@10/03 LOVABLE 167,74')).toBe('10/03 LOVABLE 167,74');
+
+      expect(isItauCategoryCityLine('ALIMENTAÇÃO .MARINGA')).toBe(true);
+      expect(isItauCategoryCityLine('DIVERSOS .SAO PAULO')).toBe(true);
+      expect(isItauCardSummaryLine('Lançamentos no cartão (final 8275) 11.096,14')).toBe(true);
+      expect(isItauInternationalMetadataLine('SEATTLE 87,53 USD 87,53')).toBe(true);
+      expect(isItauInternationalMetadataLine('Dólar de Conversão R$ 5,65')).toBe(true);
+      expect(isItauInternationalMetadataLine('DOVER 160,50 BRL 30,61')).toBe(true);
+      expect(isItauFutureInstallmentSectionStart('Compras parceladas - próximas faturas')).toBe(true);
+      expect(isItauTransactionLine('22/08 VIVARA MOR 08/10 930,15')).toBe(true);
+      expect(isItauTransactionLine('03/04 ESTORNO DE ANUIDADE DIF - 52,50')).toBe(true);
+    });
+
+    it('reconstrói linhas quebradas do Itaú antes do parser principal', () => {
+      const rebuilt = rebuildBrokenItauTransactionLines([
+        '22/08',
+        'VIVARA MOR',
+        '08/10',
+        '930,15',
+        'ALIMENTAÇÃO .MARINGA',
+        '07/03',
+        'KANPAI',
+        '101,90',
+      ]);
+
+      expect(rebuilt).toEqual([
+        '22/08 VIVARA MOR 08/10 930,15',
+        '07/03 KANPAI 101,90',
+      ]);
+    });
+
+    it('preprocessa o texto do Itaú removendo ruído e parando em próximas faturas', () => {
+      const lines = preprocessItauText([
+        'Banco Itaú S.A.',
+        'Resumo da fatura em R$',
+        'Lançamentos: compras e saques',
+        '22/08',
+        'VIVARA MOR',
+        '08/10',
+        '930,15',
+        'DIVERSOS .SAO PAULO',
+        '10/03 LOVABLE 167,74',
+        'DOVER 160,50 BRL 30,61',
+        'Dólar de Conversão R$ 5,48',
+        'Compras parceladas - próximas faturas',
+        '27/09 CLUBE LIVELO*Clube08/12 24,90',
+      ].join('\n'));
+
+      expect(lines).toEqual([
+        '22/08 VIVARA MOR 08/10 930,15',
+        '10/03 LOVABLE 167,74',
+      ]);
+    });
+
+    it('extrai partes da transação do Itaú com descrição colada e estorno', () => {
+      expect(extractItauTransactionParts('18/02 FARMACIA E DROGARI02/02 182,01', ctx)).toMatchObject({
+        descricao_original: 'FARMACIA E DROGARI02/02',
+        descricao_normalizada: 'farmacia e drogari',
+        data_compra: '2026-02-18',
+        valor: 182.01,
+        parcelas: '2/2',
+        banco_origem: 'itau',
+      });
+
+      expect(extractItauTransactionParts('03/04 ESTORNO DE ANUIDADE DIF - 52,50', ctx)).toMatchObject({
+        descricao_original: 'ESTORNO DE ANUIDADE DIF',
+        descricao_normalizada: 'estorno de anuidade dif',
+        data_compra: '2025-04-03',
+        valor: -52.5,
+        parcelas: null,
+        banco_origem: 'itau',
+      });
+    });
+
+    it('parseia o Itaú pela pipeline específica de preprocessamento + parser', () => {
+      const items = parseItauStatement([
+        '22/08 VIVARA MOR 08/10 930,15',
+        '03/03 AMAZON MKTPL*BE8ZQ41X1 494,54',
+        '07/03 KANPAI 101,90',
+      ], ctx);
+
+      expect(items).toHaveLength(3);
+      expect(items[0].banco_origem).toBe('itau');
+      expect(items.find((item) => item.descricao_normalizada.includes('vivara'))?.parcelas).toBe('8/10');
     });
   });
 

@@ -6,6 +6,105 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 type TextToken = { x: number; y: number; str: string; width: number };
+const ROW_Y_TOLERANCE = 3;
+
+function groupTokensByVisualRows(tokens: TextToken[]): TextToken[][] {
+  if (tokens.length === 0) return [];
+
+  const sorted = [...tokens].sort((a, b) => b.y - a.y || a.x - b.x);
+  const rows: TextToken[][] = [];
+
+  let currentRow: TextToken[] = [sorted[0]];
+  let currentY = sorted[0].y;
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const token = sorted[index];
+    if (Math.abs(token.y - currentY) <= ROW_Y_TOLERANCE) {
+      currentRow.push(token);
+      continue;
+    }
+
+    rows.push(currentRow);
+    currentRow = [token];
+    currentY = token.y;
+  }
+
+  rows.push(currentRow);
+  return rows;
+}
+
+function isDateOnlyLine(line: string): boolean {
+  return /^\d{1,2}\/\d{2}$/.test(line.trim());
+}
+
+function isAmountOnlyLine(line: string): boolean {
+  return /^-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/.test(line.trim());
+}
+
+function isInstallmentOnlyLine(line: string): boolean {
+  return /^\d{1,2}\/\d{2}$/.test(line.trim());
+}
+
+function rebuildExtractedLines(lines: string[]): string[] {
+  const rebuilt: string[] = [];
+
+  let index = 0;
+  while (index < lines.length) {
+    const current = lines[index].trim();
+    if (!current) {
+      index += 1;
+      continue;
+    }
+
+    if (!isDateOnlyLine(current)) {
+      rebuilt.push(current);
+      index += 1;
+      continue;
+    }
+
+    const date = current;
+    const parts: string[] = [];
+    let amount: string | null = null;
+    let lookahead = index + 1;
+
+    while (lookahead < lines.length) {
+      const candidate = lines[lookahead].trim();
+      if (!candidate) {
+        lookahead += 1;
+        continue;
+      }
+
+      if (isAmountOnlyLine(candidate)) {
+        amount = candidate;
+        lookahead += 1;
+        break;
+      }
+
+      if (isDateOnlyLine(candidate) && parts.length > 0) {
+        if (isInstallmentOnlyLine(candidate)) {
+          parts.push(candidate);
+          lookahead += 1;
+          continue;
+        }
+        break;
+      }
+
+      parts.push(candidate);
+      lookahead += 1;
+    }
+
+    if (parts.length > 0 && amount) {
+      rebuilt.push(`${date} ${parts.join(' ')} ${amount}`.replace(/\s+/g, ' ').trim());
+      index = lookahead;
+      continue;
+    }
+
+    rebuilt.push(current);
+    index += 1;
+  }
+
+  return rebuilt;
+}
 
 /**
  * Splits tokens into columns when a page has a clear two-column layout.
@@ -16,24 +115,7 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
   if (tokens.length === 0) return [[]];
 
   const midpoint = pageWidth / 2;
-  const Y_TOL = 3;
-
-  // 1) Group tokens into visual rows by Y proximity
-  const sorted = [...tokens].sort((a, b) => b.y - a.y);
-  const visualRows: TextToken[][] = [];
-  let curRow: TextToken[] = [sorted[0]];
-  let curY = sorted[0].y;
-
-  for (let i = 1; i < sorted.length; i++) {
-    if (Math.abs(sorted[i].y - curY) <= Y_TOL) {
-      curRow.push(sorted[i]);
-    } else {
-      visualRows.push(curRow);
-      curRow = [sorted[i]];
-      curY = sorted[i].y;
-    }
-  }
-  visualRows.push(curRow);
+  const visualRows = groupTokensByVisualRows(tokens);
 
   // 2) Detect whether the page really has two independent columns.
   //
@@ -54,6 +136,9 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
   let leftRowCount = 0;
   let rightRowCount = 0;
   const rightColBoundary = midpoint + pageWidth * 0.3;
+  let leftRichRows = 0;
+  let rightRichRows = 0;
+
   for (const row of visualRows) {
     const minX = Math.min(...row.map((t) => t.x));
     if (minX < midpoint - 10) {
@@ -65,9 +150,14 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
     if (hasRightColStart) {
       rightRowCount += 1;
     }
+
+    const leftTokensInRow = row.filter((t) => t.x + t.width / 2 < midpoint);
+    const rightTokensInRow = row.filter((t) => t.x + t.width / 2 >= midpoint);
+    if (leftTokensInRow.length >= 2) leftRichRows += 1;
+    if (rightTokensInRow.length >= 2) rightRichRows += 1;
   }
 
-  if (leftRowCount < 3 || rightRowCount < 3) {
+  if (leftRowCount < 3 || rightRowCount < 3 || leftRichRows < 2 || rightRichRows < 2) {
     return [tokens];
   }
 
@@ -98,24 +188,7 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
 function tokensToLines(tokens: TextToken[]): string[] {
   if (tokens.length === 0) return [];
 
-  const sorted = [...tokens].sort((a, b) => b.y - a.y);
-
-  const lines: TextToken[][] = [];
-  let currentLine: TextToken[] = [sorted[0]];
-  let currentY = sorted[0].y;
-
-  for (let i = 1; i < sorted.length; i++) {
-    if (Math.abs(sorted[i].y - currentY) <= 3) {
-      currentLine.push(sorted[i]);
-    } else {
-      lines.push(currentLine);
-      currentLine = [sorted[i]];
-      currentY = sorted[i].y;
-    }
-  }
-  lines.push(currentLine);
-
-  return lines.map((line) => {
+  const lines = groupTokensByVisualRows(tokens).map((line) => {
     line.sort((a, b) => a.x - b.x);
     let result = '';
     for (let i = 0; i < line.length; i++) {
@@ -127,6 +200,8 @@ function tokensToLines(tokens: TextToken[]): string[] {
     }
     return result.trim();
   });
+
+  return rebuildExtractedLines(lines);
 }
 
 export async function extractTextFromPdf(file: File): Promise<string> {
