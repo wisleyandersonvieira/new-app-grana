@@ -72,12 +72,15 @@ export default function RelatorioDetalhado() {
     if (filterSub !== 'all') dq = dq.eq('subcategoria_id', filterSub);
 
     // Itens fatura - competencia is a DATE column (YYYY-MM-01)
+    // Server-side range filter prevents hitting Supabase's 1000-row default limit.
     const compInicioDate = `${compInicio}-01`;
     const compFimDate = `${compFim}-31`;
     let iq = supabase
       .from('itens_fatura')
       .select('valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')
-      .eq('usuario_id', user.id);
+      .eq('usuario_id', user.id)
+      .gte('competencia', compInicioDate)
+      .lte('competencia', compFimDate);
     if (filterCat !== 'all') iq = iq.eq('categoria_id', filterCat);
     if (filterSub !== 'all') iq = iq.eq('subcategoria_id', filterSub);
     const [{ data: receitas }, { data: despesas }, { data: itens }] = await Promise.all([rq, dq, iq]);
