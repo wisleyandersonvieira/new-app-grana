@@ -52,11 +52,21 @@ export function isItauCategoryCityLine(line: string): boolean {
   if (!cleaned || ITAU_DATE_START.test(cleaned) || ITAU_AMOUNT_AT_END.test(cleaned)) return false;
 
   const upper = stripAccents(cleaned).toUpperCase();
+
+  // Lines with URL characters or merchant-name punctuation are never category/city headers.
+  // e.g. "APPLE.COM/BILL", "AMAZON MKTPL*BE8", "USER@HOST"
+  if (/[/*@#]/.test(upper)) return false;
+
   const lettersOnly = upper.replace(/[^A-Z]/g, '');
   if (lettersOnly.length < 6) return false;
 
   const mostlyUppercase = lettersOnly.length >= Math.max(6, Math.floor(cleaned.length * 0.45));
-  const hasCategoryCitySeparator = /[A-Z].*\.[A-Z]/.test(upper);
+  // Real Itaú category/city lines use one of two separator patterns:
+  //   " .CITY"   e.g. "ALIMENTAÇÃO .MARINGA"
+  //   "WORD.WORD" e.g. "TURISMO E ENTRETENIM.CAMPO GRANDE" (5+ chars on each side)
+  // Short TLD-style dots like ".COM" (3 chars) are merchant URLs, not separators.
+  const hasCategoryCitySeparator =
+    /\s\.[A-Z]/.test(upper) || /[A-Z]{5,}\.[A-Z]{4,}/.test(upper);
 
   return mostlyUppercase && hasCategoryCitySeparator;
 }
@@ -215,6 +225,11 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
         continue;
       }
 
+      // A complete transaction line is always the start of the next entry.
+      if (isItauTransactionLine(candidate)) {
+        break;
+      }
+
       if (isAmountOnlyLine(candidate)) {
         rawAmount = candidate;
         lookahead += 1;
@@ -224,18 +239,33 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
       // A lone "DD/MM" token — could be an installment code (e.g. "08/10")
       // or the beginning of the next transaction.
       if (isInstallmentOnlyLine(candidate)) {
-        // If we haven't collected any description yet and we're in date-only
-        // mode, a second bare date means a new transaction is starting.
-        const hasDescSoFar = descriptionParts.length > 0 || !isDateOnly;
-        if (!hasDescSoFar) break;
+        // Partial lines ("22/08 VIVARA MOR 08/10") already carry their installment
+        // code, so any bare date in the lookahead must be the next transaction.
+        // For date-only lines, accept exactly one installment code once we have
+        // at least one description part; a second bare date signals a new entry.
+        if (!isDateOnly || descriptionParts.length === 0) break;
         descriptionParts.push(candidate);
         lookahead += 1;
         continue;
       }
 
-      // A line that starts with a date AND has more content → next transaction.
+      // A line that starts with a date and has more content → next transaction.
       if (ITAU_DATE_START.test(candidate)) {
         break;
+      }
+
+      // Non-date line that ends with an amount value: the PDF placed description
+      // and amount on the same row (e.g. "VIVARA MOR 08/10 930,15").
+      // Extract both rather than pushing the whole thing as a description fragment.
+      if (ITAU_AMOUNT_AT_END.test(candidate)) {
+        const amtMatch = candidate.match(ITAU_AMOUNT_AT_END);
+        if (amtMatch) {
+          const remainder = candidate.slice(0, candidate.length - amtMatch[0].length).trim();
+          if (remainder) descriptionParts.push(remainder);
+          rawAmount = amtMatch[0];
+          lookahead += 1;
+          break;
+        }
       }
 
       descriptionParts.push(candidate);
@@ -266,15 +296,30 @@ export function preprocessItauText(text: string): string[] {
     .filter(Boolean);
 
   const cleanedLines: string[] = [];
+  let stoppedAt: string | null = null;
 
   for (const line of sourceLines) {
-    if (isItauFutureInstallmentSectionStart(line)) break;
+    if (isItauFutureInstallmentSectionStart(line)) {
+      stoppedAt = line;
+      break;
+    }
     if (isItauFutureSectionSoftStop(line)) continue;
     if (isIgnorableItauLine(line)) continue;
     cleanedLines.push(line);
   }
 
-  return rebuildBrokenItauTransactionLines(cleanedLines);
+  const rebuilt = rebuildBrokenItauTransactionLines(cleanedLines);
+
+  // Visible in browser DevTools (Console → Verbose) and Node debug output.
+  console.debug(
+    '[itau-parser] source=%d  after-filter=%d  after-rebuild=%d  stopped-at=%s',
+    sourceLines.length,
+    cleanedLines.length,
+    rebuilt.length,
+    stoppedAt ?? 'none',
+  );
+
+  return rebuilt;
 }
 
 // ── Debug / diagnostics ──────────────────────────────────────────────────────
