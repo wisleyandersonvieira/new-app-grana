@@ -176,6 +176,10 @@ export function isItauTransactionLine(line: string): boolean {
 
 export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
   const rebuilt: string[] = [];
+  let statsComplete = 0;
+  let statsDateRebuildOk = 0;
+  let statsDateRebuildFail = 0;
+  let statsDiscarded = 0;
 
   let index = 0;
   while (index < lines.length) {
@@ -188,6 +192,7 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
     // Case 1: already a complete, parseable transaction — push as-is.
     if (isItauTransactionLine(current)) {
       rebuilt.push(current);
+      statsComplete += 1;
       index += 1;
       continue;
     }
@@ -196,6 +201,7 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
     // "22/08 VIVARA MOR 08/10" that is missing its trailing amount).
     // Lines that do NOT start with a date are orphaned fragments — discard them.
     if (!ITAU_DATE_START.test(current)) {
+      statsDiscarded += 1;
       index += 1;
       continue;
     }
@@ -278,11 +284,31 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
       rebuilt.push(
         [current, ...descriptionParts, rawAmount].join(' ').replace(/\s+/g, ' ').trim(),
       );
+      statsDateRebuildOk += 1;
       index = lookahead;
       continue;
     }
 
+    statsDateRebuildFail += 1;
     index += 1;
+  }
+
+  console.debug(
+    '[itau-rebuild] in=%d  complete=%d  rebuilt-ok=%d  rebuilt-fail=%d  discarded=%d  out=%d',
+    lines.length, statsComplete, statsDateRebuildOk, statsDateRebuildFail, statsDiscarded, rebuilt.length,
+  );
+  if (statsDateRebuildFail > 0) {
+    // Log the date-starting lines that failed to rebuild so we can diagnose the format.
+    const failedLines: string[] = [];
+    let scanIdx = 0;
+    while (scanIdx < lines.length && failedLines.length < 20) {
+      const l = cleanItauNoisePrefix(lines[scanIdx]);
+      if (l && ITAU_DATE_START.test(l) && !isItauTransactionLine(l)) {
+        failedLines.push(l);
+      }
+      scanIdx += 1;
+    }
+    console.debug('[itau-rebuild] sample date-starting non-complete lines (first 20):', failedLines);
   }
 
   return rebuilt;
@@ -318,6 +344,8 @@ export function preprocessItauText(text: string): string[] {
     rebuilt.length,
     stoppedAt ?? 'none',
   );
+  // Show a sample of cleaned lines so the format that reaches rebuild is visible.
+  console.debug('[itau-parser] sample cleaned lines (first 40):', cleanedLines.slice(0, 40));
 
   return rebuilt;
 }
