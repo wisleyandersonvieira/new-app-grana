@@ -175,18 +175,25 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
       continue;
     }
 
+    // Case 1: already a complete, parseable transaction — push as-is.
     if (isItauTransactionLine(current)) {
       rebuilt.push(current);
       index += 1;
       continue;
     }
 
-    if (!isInstallmentOnlyLine(current)) {
+    // Case 2: starts with a date (either date-only "22/08" OR a partial line
+    // "22/08 VIVARA MOR 08/10" that is missing its trailing amount).
+    // Lines that do NOT start with a date are orphaned fragments — discard them.
+    if (!ITAU_DATE_START.test(current)) {
       index += 1;
       continue;
     }
 
-    const transactionDate = current;
+    // For date-only lines the description accumulates from subsequent lines.
+    // For partial lines the description is already in `current`.
+    const isDateOnly = isInstallmentOnlyLine(current);
+
     const descriptionParts: string[] = [];
     let rawAmount: string | null = null;
     let lookahead = index + 1;
@@ -214,14 +221,20 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
         break;
       }
 
+      // A lone "DD/MM" token — could be an installment code (e.g. "08/10")
+      // or the beginning of the next transaction.
       if (isInstallmentOnlyLine(candidate)) {
-        if (descriptionParts.length === 0) break;
+        // If we haven't collected any description yet and we're in date-only
+        // mode, a second bare date means a new transaction is starting.
+        const hasDescSoFar = descriptionParts.length > 0 || !isDateOnly;
+        if (!hasDescSoFar) break;
         descriptionParts.push(candidate);
         lookahead += 1;
         continue;
       }
 
-      if (ITAU_DATE_START.test(candidate) && descriptionParts.length > 0) {
+      // A line that starts with a date AND has more content → next transaction.
+      if (ITAU_DATE_START.test(candidate)) {
         break;
       }
 
@@ -229,8 +242,12 @@ export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
       lookahead += 1;
     }
 
-    if (descriptionParts.length > 0 && rawAmount) {
-      rebuilt.push(`${transactionDate} ${descriptionParts.join(' ')} ${rawAmount}`.replace(/\s+/g, ' ').trim());
+    // Rebuild whenever we found an amount — extractItauTransactionParts will
+    // reject the result if there is still no description.
+    if (rawAmount !== null) {
+      rebuilt.push(
+        [current, ...descriptionParts, rawAmount].join(' ').replace(/\s+/g, ' ').trim(),
+      );
       index = lookahead;
       continue;
     }
@@ -258,6 +275,76 @@ export function preprocessItauText(text: string): string[] {
   }
 
   return rebuildBrokenItauTransactionLines(cleanedLines);
+}
+
+// ── Debug / diagnostics ──────────────────────────────────────────────────────
+
+export type ItauLineClassification =
+  | 'transaction'
+  | 'partial-transaction'
+  | 'date-only'
+  | 'amount-only'
+  | 'category-city'
+  | 'card-summary'
+  | 'international-metadata'
+  | 'future-section'
+  | 'header-noise'
+  | 'unknown';
+
+export function classifyItauLine(line: string): ItauLineClassification {
+  const cleaned = cleanItauNoisePrefix(line);
+  if (!cleaned) return 'unknown';
+  if (isItauFutureInstallmentSectionStart(cleaned)) return 'future-section';
+  if (isItauHeaderOrNoiseLine(cleaned)) return 'header-noise';
+  if (isItauCategoryCityLine(cleaned)) return 'category-city';
+  if (isItauCardSummaryLine(cleaned)) return 'card-summary';
+  if (isItauInternationalMetadataLine(cleaned)) return 'international-metadata';
+  if (isAmountOnlyLine(cleaned)) return 'amount-only';
+  if (isInstallmentOnlyLine(cleaned)) return 'date-only';
+  if (isItauTransactionLine(cleaned)) return 'transaction';
+  if (ITAU_DATE_START.test(cleaned)) return 'partial-transaction';
+  return 'unknown';
+}
+
+export interface ItauDebugResult {
+  totalSourceLines: number;
+  classificationCounts: Partial<Record<ItauLineClassification, number>>;
+  classifications: Array<{ line: string; classification: ItauLineClassification }>;
+  afterPreprocessLines: number;
+  finalTransactions: number;
+}
+
+export function debugItauParsing(text: string, ctx?: ParserContext): ItauDebugResult {
+  const sourceLines = text
+    .split('\n')
+    .map((line) => cleanItauNoisePrefix(line).replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const classifications = sourceLines.map((line) => ({
+    line,
+    classification: classifyItauLine(line),
+  }));
+
+  const classificationCounts = classifications.reduce<Partial<Record<ItauLineClassification, number>>>(
+    (acc, { classification }) => {
+      acc[classification] = (acc[classification] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+
+  const preprocessed = preprocessItauText(text);
+  const finalItems = ctx
+    ? parseItauStatement(preprocessed, ctx)
+    : parseItauStatement(preprocessed, { competencia: '2026-01' });
+
+  return {
+    totalSourceLines: sourceLines.length,
+    classificationCounts,
+    classifications,
+    afterPreprocessLines: preprocessed.length,
+    finalTransactions: finalItems.length,
+  };
 }
 
 export function parseItauStatement(

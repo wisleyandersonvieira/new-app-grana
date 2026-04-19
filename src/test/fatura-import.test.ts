@@ -9,6 +9,11 @@ import {
 import { identifyBankFromText, parseStatementText } from '@/lib/fatura-import/service';
 import { splitIntoColumns } from '@/lib/fatura-import/pdf-text';
 import {
+  classifyItauLine,
+  debugItauParsing,
+  rebuildBrokenItauTransactionLines,
+} from '@/lib/fatura-import/parsers/itau-helpers';
+import {
   cleanItauNoisePrefix,
   extractItauTransactionParts,
   isItauCardSummaryLine,
@@ -708,5 +713,165 @@ TOTAL R$ 20.511,34`;
     expect(items.find((i) => i.descricao_normalizada.includes('clinica ritha capela'))?.parcelas).toBe('6/6');
     expect(items.find((i) => i.descricao_normalizada.includes('adidas'))?.valor).toBeCloseTo(333.93, 2);
     expect(items.find((i) => i.descricao_normalizada.includes('amazon mark bg15u9p'))?.valor).toBeCloseTo(501.86, 2);
+  });
+});
+
+// ── rebuildBrokenItauTransactionLines – partial-line coverage ─────────────────
+
+describe('rebuildBrokenItauTransactionLines', () => {
+  it('reconstrói linha parcial (data+desc sem valor) quando valor vem na linha seguinte', () => {
+    const lines = [
+      '22/08 VIVARA MOR 08/10',
+      '930,15',
+    ];
+    const result = rebuildBrokenItauTransactionLines(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('22/08 VIVARA MOR 08/10 930,15');
+  });
+
+  it('reconstrói linha parcial sem parcela (data+desc sem valor)', () => {
+    const lines = [
+      '28/08 LATAM AIR',
+      '1.765,52',
+    ];
+    const result = rebuildBrokenItauTransactionLines(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('28/08 LATAM AIR 1.765,52');
+  });
+
+  it('mantém linha completa sem alteração', () => {
+    const lines = ['07/03 KANPAI 101,90'];
+    const result = rebuildBrokenItauTransactionLines(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('07/03 KANPAI 101,90');
+  });
+
+  it('reconstrói data-only seguida de descrição e valor', () => {
+    const lines = ['22/08', 'VIVARA MOR', '08/10', '930,15'];
+    const result = rebuildBrokenItauTransactionLines(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('22/08 VIVARA MOR 08/10 930,15');
+  });
+
+  it('processa múltiplas linhas mistas (completas e parciais) sem perda', () => {
+    const lines = [
+      '07/03 KANPAI 101,90',        // completa
+      '22/08 VIVARA MOR 08/10',     // parcial — sem valor
+      '930,15',                      // valor da anterior
+      '28/08 LATAM AIR 08/08',      // parcial
+      '1.765,52',                    // valor da anterior
+    ];
+    const result = rebuildBrokenItauTransactionLines(lines);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe('07/03 KANPAI 101,90');
+    expect(result[1]).toBe('22/08 VIVARA MOR 08/10 930,15');
+    expect(result[2]).toBe('28/08 LATAM AIR 08/08 1.765,52');
+  });
+
+  it('descarta linha parcial sem valor correspondente e não corrompe o próximo lançamento', () => {
+    const lines = [
+      '22/08 VIVARA MOR 08/10',     // parcial, sem valor
+      '28/08 LATAM AIR 1.765,52',   // próxima transação completa
+    ];
+    const result = rebuildBrokenItauTransactionLines(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('28/08 LATAM AIR 1.765,52');
+  });
+});
+
+// ── classifyItauLine ──────────────────────────────────────────────────────────
+
+describe('classifyItauLine', () => {
+  it('classifica transação completa', () => {
+    expect(classifyItauLine('07/03 KANPAI 101,90')).toBe('transaction');
+  });
+
+  it('classifica linha parcial (data+desc sem valor)', () => {
+    expect(classifyItauLine('22/08 VIVARA MOR 08/10')).toBe('partial-transaction');
+  });
+
+  it('classifica data-only', () => {
+    expect(classifyItauLine('22/08')).toBe('date-only');
+  });
+
+  it('classifica valor-only', () => {
+    expect(classifyItauLine('930,15')).toBe('amount-only');
+  });
+
+  it('classifica linha de categoria/cidade', () => {
+    expect(classifyItauLine('ALIMENTAÇÃO .MARINGA')).toBe('category-city');
+  });
+
+  it('classifica resumo de cartão', () => {
+    expect(classifyItauLine('Lançamentos no cartão (final 8275) 11.096,14')).toBe('card-summary');
+  });
+
+  it('classifica metadata internacional', () => {
+    expect(classifyItauLine('Dólar de Conversão R$ 5,65')).toBe('international-metadata');
+  });
+
+  it('classifica início de seção futura', () => {
+    expect(classifyItauLine('Compras parceladas - próximas faturas')).toBe('future-section');
+  });
+});
+
+// ── debugItauParsing ──────────────────────────────────────────────────────────
+
+describe('debugItauParsing', () => {
+  const CTX = { competencia: '2026-03' };
+  const withHeader = (body: string) =>
+    `Banco Itaú S.A.\nResumo da fatura em R$\nLançamentos: compras e saques\n${body}`;
+
+  it('retorna estrutura de debug com contagens corretas', () => {
+    const text = withHeader(
+      [
+        '07/03 KANPAI 101,90',
+        'ALIMENTAÇÃO .MARINGA',
+        'Dólar de Conversão R$ 5,65',
+        '22/08 VIVARA MOR 08/10',
+        '930,15',
+      ].join('\n'),
+    );
+
+    const result = debugItauParsing(text, CTX);
+
+    expect(result.totalSourceLines).toBeGreaterThan(0);
+    expect(result.classificationCounts['transaction']).toBeGreaterThanOrEqual(1);
+    expect(result.classificationCounts['category-city']).toBeGreaterThanOrEqual(1);
+    expect(result.classificationCounts['international-metadata']).toBeGreaterThanOrEqual(1);
+    expect(result.classificationCounts['partial-transaction']).toBeGreaterThanOrEqual(1);
+    expect(result.finalTransactions).toBeGreaterThanOrEqual(2);
+  });
+
+  it('não importa menos de 8 lançamentos da fatura completa de exemplo', () => {
+    const text = withHeader(
+      [
+        '22/08 VIVARA MOR 08/10 930,15',
+        'DIVERSOS .SAO PAULO',
+        '18/02 FARMACIA E DROGARI02/02 182,01',
+        'SAÚDE .MARINGA',
+        ')))02/03 AV SAO PAULO-CT 02/02 269,88',
+        'ALIMENTAÇÃO .MARINGA',
+        '03/03 AMAZON MKTPL*BE8ZQ41X1 494,54',
+        'SEATTLE 87,53 USD 87,53',
+        'Dólar de Conversão R$ 5,65',
+        '07/03 KANPAI 101,90',
+        'ALIMENTAÇÃO .MARINGA',
+        '03/04 ESTORNO DE ANUIDADE DIF - 52,50',
+        'Lançamentos internacionais',
+        '10/03 LOVABLE 167,74',
+        'DOVER 160,50 BRL 30,61',
+        'Dólar de Conversão R$ 5,48',
+        '18/03 UI BAKERY INC. 66,36',
+        'AUSTIN 12,00 USD 12,00',
+        'Dólar de Conversão R$ 5,53',
+        'Lançamentos no cartão (final 8275) 11.096,14',
+      ].join('\n'),
+    );
+
+    const result = debugItauParsing(text, CTX);
+
+    // Com a fatura acima, nenhuma cobertura abaixo de 8 é aceitável
+    expect(result.finalTransactions).toBeGreaterThanOrEqual(8);
   });
 });
