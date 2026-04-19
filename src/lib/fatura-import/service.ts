@@ -6,6 +6,7 @@ import { SicoobParser } from './parsers/sicoob-parser';
 import type { ImportedInvoiceItem, ParsedStatementItem, ParserContext, StatementSuggestion, SupportedBank } from './types';
 
 const parsers = [new ItauParser(), new SicoobParser()];
+const ITAU_MIN_EXPECTED_ITEMS = 50;
 
 type SuggestionRow = {
   categoria: string | null;
@@ -130,6 +131,11 @@ export async function importInvoicePdfPreview(params: {
   const parsedItems = parseStatementText(textoExtraido, { competencia: params.competencia });
   if (parsedItems.length === 0) {
     throw new Error('Nenhum lançamento válido foi encontrado nesta fatura.');
+  }
+  if (banco === 'itau' && parsedItems.length < ITAU_MIN_EXPECTED_ITEMS) {
+    throw new Error(
+      `A importação do Itaú foi interrompida porque só ${parsedItems.length} lançamentos válidos foram encontrados. Esperávamos pelo menos ${ITAU_MIN_EXPECTED_ITEMS}; isso indica que o PDF não foi reconstruído corretamente.`,
+    );
   }
 
   const suggestionRows = await fetchSuggestionRows(params.userId, params.cartaoId);

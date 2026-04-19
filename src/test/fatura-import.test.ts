@@ -11,6 +11,7 @@ import { splitIntoColumns } from '@/lib/fatura-import/pdf-text';
 import {
   classifyItauLine,
   debugItauParsing,
+  rebuildItauTransactionBlocks,
   rebuildBrokenItauTransactionLines,
 } from '@/lib/fatura-import/parsers/itau-helpers';
 import {
@@ -23,7 +24,6 @@ import {
   isItauTransactionLine,
   parseItauStatement,
   preprocessItauText,
-  rebuildBrokenItauTransactionLines,
 } from '@/lib/fatura-import/parsers/itau-helpers';
 
 // ── splitIntoColumns ──────────────────────────────────────────────────────────
@@ -220,7 +220,7 @@ describe('fatura import helpers', () => {
       expect(extractItauTransactionParts('03/04 ESTORNO DE ANUIDADE DIF - 52,50', ctx)).toMatchObject({
         descricao_original: 'ESTORNO DE ANUIDADE DIF',
         descricao_normalizada: 'estorno de anuidade dif',
-        data_compra: '2025-04-03',
+        data_compra: '2026-04-03',
         valor: -52.5,
         parcelas: null,
         banco_origem: 'itau',
@@ -777,6 +777,25 @@ describe('rebuildBrokenItauTransactionLines', () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toBe('28/08 LATAM AIR 1.765,52');
   });
+
+  it('reconstrói blocos do Itaú sem misturar compra principal e estorno de 0,01', () => {
+    const result = rebuildItauTransactionBlocks([
+      ')))02/03',
+      'AV SAO PAULO-CT',
+      '02/02',
+      '269,88',
+      '02/03 AV SAO PAULO-CT - 0,01',
+      'POSTO PRESIDENTE',
+      '03/03',
+      '54,32',
+    ]);
+
+    expect(result).toEqual([
+      '02/03 AV SAO PAULO-CT 02/02 269,88',
+      '02/03 AV SAO PAULO-CT - 0,01',
+      '03/03 POSTO PRESIDENTE 54,32',
+    ]);
+  });
 });
 
 // ── classifyItauLine ──────────────────────────────────────────────────────────
@@ -873,5 +892,56 @@ describe('debugItauParsing', () => {
 
     // Com a fatura acima, nenhuma cobertura abaixo de 8 é aceitável
     expect(result.finalTransactions).toBeGreaterThanOrEqual(8);
+  });
+
+  it('mantém compras, estornos e todos os lançamentos obrigatórios em uma fatura grande', () => {
+    const requiredSection = [
+      ')))02/03',
+      'AV SAO PAULO-CT',
+      '02/02',
+      '269,88',
+      '02/03 AV SAO PAULO-CT - 0,01',
+      '03/03 POSTO PRESIDENTE 54,32',
+      '07/03',
+      'KANPAI',
+      '101,90',
+      '10/03 LOVABLE 167,74',
+      '11/03 SUPABASE 145,00',
+      '12/03 SEBRAE PR 89,90',
+      '13/03 APPLECOMBILL 39,90',
+      '14/03 APPLECOMBILL - 4,40',
+      '15/03 JOAO PAULINO 724,24',
+      'ALIMENTAÇÃO .MARINGA',
+    ];
+    const fillerSection = Array.from({ length: 45 }, (_, index) => {
+      const day = String((index % 28) + 1).padStart(2, '0');
+      const cents = String((index % 90) + 10).padStart(2, '0');
+      return `${day}/03 MERCHANT ${index + 1} ${index + 20},${cents}`;
+    });
+    const text = withHeader(
+      [
+        ...requiredSection,
+        ...fillerSection,
+        'Compras parceladas - próximas faturas',
+        '16/03 FUTURA 01/10 999,99',
+      ].join('\n'),
+    );
+
+    const items = parseStatementText(text, CTX);
+
+    expect(items.length).toBeGreaterThanOrEqual(50);
+    expect(items.find((item) => item.descricao_normalizada.includes('av sao paulo'))?.valor).toBe(269.88);
+    expect(items.filter((item) => item.descricao_normalizada.includes('applecombill'))).toHaveLength(2);
+    expect(items.find((item) => item.descricao_normalizada.includes('applecombill') && item.valor > 0)?.valor).toBe(39.90);
+    expect(items.find((item) => item.descricao_normalizada.includes('applecombill') && item.valor < 0)?.valor).toBe(-4.40);
+    expect(items.find((item) => item.descricao_normalizada.includes('posto presidente'))).toBeDefined();
+    expect(items.find((item) => item.descricao_normalizada.includes('kanpai'))).toBeDefined();
+    expect(items.find((item) => item.descricao_normalizada.includes('joao paulino'))).toBeDefined();
+    expect(items.find((item) => item.descricao_normalizada.includes('lovable'))).toBeDefined();
+    expect(items.find((item) => item.descricao_normalizada.includes('supabase'))).toBeDefined();
+    expect(items.find((item) => item.descricao_normalizada.includes('sebrae pr'))).toBeDefined();
+    expect(items.filter((item) => item.descricao_normalizada.includes('av sao paulo') && item.valor === 0.01)).toHaveLength(0);
+    expect(items.filter((item) => item.descricao_normalizada.includes('futura'))).toHaveLength(0);
+    expect(items.every((item) => item.data_compra?.startsWith('2026-') ?? false)).toBe(true);
   });
 });

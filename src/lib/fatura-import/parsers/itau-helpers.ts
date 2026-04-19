@@ -1,5 +1,4 @@
 import {
-  inferTransactionDate,
   normalizeInstallmentText,
   normalizeStatementDescription,
   parseBrazilianCurrency,
@@ -12,6 +11,15 @@ const ITAU_DATE_START = /^\d{1,2}\/\d{2}\b/;
 const ITAU_DATE_ONLY = /^\d{1,2}\/\d{2}$/;
 const ITAU_AMOUNT_ONLY = /^-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/;
 const ITAU_AMOUNT_AT_END = /(-\s*)?\d{1,3}(?:\.\d{3})*,\d{2}$/;
+
+function inferItauTransactionDate(dayMonth: string, competencia: string): string | null {
+  const [competenciaYear] = competencia.split('-').map(Number);
+  const [day, transactionMonth] = dayMonth.split('/').map(Number);
+
+  if (!competenciaYear || !day || !transactionMonth) return null;
+
+  return `${competenciaYear}-${String(transactionMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 
 function normalizeItauLine(line: string): string {
   return removeNoisePrefixBeforeDate(line)
@@ -162,7 +170,7 @@ export function extractItauTransactionParts(
   return {
     descricao_original: descricaoOriginal,
     descricao_normalizada: descricaoNormalizada,
-    data_compra: inferTransactionDate(dateMatch[1], ctx.competencia),
+    data_compra: inferItauTransactionDate(dateMatch[1], ctx.competencia),
     valor: amount,
     parcelas,
     banco_origem: 'itau',
@@ -175,130 +183,169 @@ export function isItauTransactionLine(line: string): boolean {
 }
 
 export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
-  const rebuilt: string[] = [];
-  let statsComplete = 0;
-  let statsDateRebuildOk = 0;
-  let statsDateRebuildFail = 0;
-  let statsDiscarded = 0;
+  return rebuildItauTransactionBlocks(lines);
+}
 
-  let index = 0;
-  while (index < lines.length) {
-    const current = cleanItauNoisePrefix(lines[index]);
-    if (!current) {
-      index += 1;
-      continue;
-    }
+function buildItauTransactionBlock(blockLines: string[]): string | null {
+  const cleaned = blockLines
+    .map((line) => cleanItauNoisePrefix(line))
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
 
-    // Case 1: already a complete, parseable transaction — push as-is.
-    if (isItauTransactionLine(current)) {
-      rebuilt.push(current);
-      statsComplete += 1;
-      index += 1;
-      continue;
-    }
+  if (cleaned.length === 0) return null;
 
-    // Case 2: starts with a date (either date-only "22/08" OR a partial line
-    // "22/08 VIVARA MOR 08/10" that is missing its trailing amount).
-    // Lines that do NOT start with a date are orphaned fragments — discard them.
-    if (!ITAU_DATE_START.test(current)) {
-      statsDiscarded += 1;
-      index += 1;
-      continue;
-    }
+  const firstLine = cleaned[0];
+  if (!ITAU_DATE_START.test(firstLine)) return null;
 
-    // For date-only lines the description accumulates from subsequent lines.
-    // For partial lines the description is already in `current`.
-    const isDateOnly = isInstallmentOnlyLine(current);
-
-    const descriptionParts: string[] = [];
-    let rawAmount: string | null = null;
-    let lookahead = index + 1;
-
-    while (lookahead < lines.length) {
-      const candidate = cleanItauNoisePrefix(lines[lookahead]);
-
-      if (!candidate || isIgnorableItauLine(candidate)) {
-        lookahead += 1;
-        continue;
-      }
-
-      if (isItauFutureInstallmentSectionStart(candidate)) {
-        break;
-      }
-
-      if (isItauFutureSectionSoftStop(candidate)) {
-        lookahead += 1;
-        continue;
-      }
-
-      // A complete transaction line is always the start of the next entry.
-      if (isItauTransactionLine(candidate)) {
-        break;
-      }
-
-      if (isAmountOnlyLine(candidate)) {
-        rawAmount = candidate;
-        lookahead += 1;
-        break;
-      }
-
-      // A lone "DD/MM" token — could be an installment code (e.g. "08/10")
-      // or the beginning of the next transaction.
-      if (isInstallmentOnlyLine(candidate)) {
-        // Partial lines ("22/08 VIVARA MOR 08/10") already carry their installment
-        // code, so any bare date in the lookahead must be the next transaction.
-        // For date-only lines, accept exactly one installment code once we have
-        // at least one description part; a second bare date signals a new entry.
-        if (!isDateOnly || descriptionParts.length === 0) break;
-        descriptionParts.push(candidate);
-        lookahead += 1;
-        continue;
-      }
-
-      // A line that starts with a date and has more content → next transaction.
-      if (ITAU_DATE_START.test(candidate)) {
-        break;
-      }
-
-      // Non-date line that ends with an amount value: the PDF placed description
-      // and amount on the same row (e.g. "VIVARA MOR 08/10 930,15").
-      // Extract both rather than pushing the whole thing as a description fragment.
-      if (ITAU_AMOUNT_AT_END.test(candidate)) {
-        const amtMatch = candidate.match(ITAU_AMOUNT_AT_END);
-        if (amtMatch) {
-          const remainder = candidate.slice(0, candidate.length - amtMatch[0].length).trim();
-          if (remainder) descriptionParts.push(remainder);
-          rawAmount = amtMatch[0];
-          lookahead += 1;
-          break;
-        }
-      }
-
-      descriptionParts.push(candidate);
-      lookahead += 1;
-    }
-
-    // Rebuild whenever we found an amount — extractItauTransactionParts will
-    // reject the result if there is still no description.
-    if (rawAmount !== null) {
-      rebuilt.push(
-        [current, ...descriptionParts, rawAmount].join(' ').replace(/\s+/g, ' ').trim(),
-      );
-      statsDateRebuildOk += 1;
-      index = lookahead;
-      continue;
-    }
-
-    statsDateRebuildFail += 1;
-    index += 1;
+  if (cleaned.length === 1 && isItauTransactionLine(firstLine)) {
+    return firstLine;
   }
 
+  const dateMatch = firstLine.match(/^(\d{1,2}\/\d{2})\s*(.*)$/);
+  if (!dateMatch) return null;
+
+  const [, transactionDate, firstBody] = dateMatch;
+  const fragments: string[] = [];
+  let rawAmount: string | null = null;
+
+  const consumeFragment = (fragment: string) => {
+    if (!fragment) return;
+    if (isIgnorableItauLine(fragment) || isItauFutureSectionSoftStop(fragment)) return;
+    if (isAmountOnlyLine(fragment)) {
+      rawAmount = fragment;
+      return;
+    }
+
+    const amountMatch = fragment.match(ITAU_AMOUNT_AT_END);
+    if (amountMatch) {
+      rawAmount = amountMatch[0];
+      const remainder = fragment.slice(0, fragment.length - amountMatch[0].length).trim();
+      if (remainder) fragments.push(remainder);
+      return;
+    }
+
+    fragments.push(fragment);
+  };
+
+  consumeFragment(firstBody.trim());
+
+  for (let index = 1; index < cleaned.length; index += 1) {
+    const line = cleaned[index];
+    const lineIsInstallmentFragment =
+      isInstallmentOnlyLine(line) &&
+      rawAmount === null &&
+      blockHasDescriptionContent(cleaned.slice(0, index));
+
+    if (ITAU_DATE_START.test(line) && !lineIsInstallmentFragment && !isAmountOnlyLine(line)) {
+      break;
+    }
+    consumeFragment(line);
+  }
+
+  if (!rawAmount) return null;
+
+  const body = fragments.join(' ').replace(/\s+/g, ' ').trim();
+  if (!body) return null;
+
+  return `${transactionDate} ${body} ${rawAmount}`.replace(/\s+/g, ' ').trim();
+}
+
+function blockHasDescriptionContent(blockLines: string[]): boolean {
+  if (blockLines.length === 0) return false;
+
+  const firstLine = cleanItauNoisePrefix(blockLines[0]).replace(/\s+/g, ' ').trim();
+  const firstLineMatch = firstLine.match(/^(\d{1,2}\/\d{2})\s*(.*)$/);
+  if (firstLineMatch?.[2]?.trim()) return true;
+
+  return blockLines
+    .slice(1)
+    .map((line) => cleanItauNoisePrefix(line).replace(/\s+/g, ' ').trim())
+    .some((line) => Boolean(line) && !isInstallmentOnlyLine(line) && !isAmountOnlyLine(line));
+}
+
+export function rebuildItauTransactionBlocks(lines: string[]): string[] {
+  const rebuilt: string[] = [];
+  let statsComplete = 0;
+  let statsBlockRebuildOk = 0;
+  let statsBlockRebuildFail = 0;
+  let statsDiscarded = 0;
+
+  let currentBlock: string[] = [];
+  let pendingLeadingFragments: string[] = [];
+
+  const flushCurrentBlock = () => {
+    if (currentBlock.length === 0) return;
+
+    const rebuiltBlock = buildItauTransactionBlock(currentBlock);
+    if (rebuiltBlock) {
+      rebuilt.push(rebuiltBlock);
+      if (currentBlock.length === 1 && rebuiltBlock === cleanItauNoisePrefix(currentBlock[0])) {
+        statsComplete += 1;
+      } else {
+        statsBlockRebuildOk += 1;
+      }
+    } else {
+      statsBlockRebuildFail += 1;
+    }
+
+    currentBlock = [];
+  };
+
+  for (const sourceLine of lines) {
+    const line = cleanItauNoisePrefix(sourceLine).replace(/\s+/g, ' ').trim();
+    if (!line) continue;
+
+    if (isItauFutureInstallmentSectionStart(line)) {
+      flushCurrentBlock();
+      break;
+    }
+
+    if (isIgnorableItauLine(line) || isItauFutureSectionSoftStop(line)) {
+      if (currentBlock.length === 0) {
+        statsDiscarded += 1;
+      }
+      continue;
+    }
+
+    const lineIsInstallmentFragment =
+      isInstallmentOnlyLine(line) &&
+      currentBlock.length > 0 &&
+      buildItauTransactionBlock(currentBlock) === null &&
+      blockHasDescriptionContent(currentBlock);
+
+    if (ITAU_DATE_START.test(line) && !lineIsInstallmentFragment) {
+      flushCurrentBlock();
+      currentBlock = [line, ...pendingLeadingFragments];
+      pendingLeadingFragments = [];
+      continue;
+    }
+
+    if (currentBlock.length > 0) {
+      const currentAlreadyComplete = buildItauTransactionBlock(currentBlock) !== null;
+      if (currentAlreadyComplete) {
+        flushCurrentBlock();
+        pendingLeadingFragments = [line];
+      } else {
+        currentBlock.push(line);
+      }
+    } else {
+      pendingLeadingFragments.push(line);
+    }
+  }
+
+  flushCurrentBlock();
+  statsDiscarded += pendingLeadingFragments.length;
+
   console.debug(
-    '[itau-rebuild] in=%d  complete=%d  rebuilt-ok=%d  rebuilt-fail=%d  discarded=%d  out=%d',
-    lines.length, statsComplete, statsDateRebuildOk, statsDateRebuildFail, statsDiscarded, rebuilt.length,
+    '[itau-rebuild] in=%d complete=%d rebuilt-ok=%d rebuilt-fail=%d discarded=%d out=%d',
+    lines.length,
+    statsComplete,
+    statsBlockRebuildOk,
+    statsBlockRebuildFail,
+    statsDiscarded,
+    rebuilt.length,
   );
-  if (statsDateRebuildFail > 0) {
-    // Log the date-starting lines that failed to rebuild so we can diagnose the format.
+  if (statsBlockRebuildFail > 0) {
     const failedLines: string[] = [];
     let scanIdx = 0;
     while (scanIdx < lines.length && failedLines.length < 20) {
@@ -334,7 +381,7 @@ export function preprocessItauText(text: string): string[] {
     cleanedLines.push(line);
   }
 
-  const rebuilt = rebuildBrokenItauTransactionLines(cleanedLines);
+  const rebuilt = rebuildItauTransactionBlocks(cleanedLines);
 
   // Visible in browser DevTools (Console → Verbose) and Node debug output.
   console.debug(
