@@ -428,10 +428,13 @@ export function classifyItauLine(line: string): ItauLineClassification {
 
 export interface ItauDebugResult {
   totalSourceLines: number;
+  sourceLines: string[];
   classificationCounts: Partial<Record<ItauLineClassification, number>>;
   classifications: Array<{ line: string; classification: ItauLineClassification }>;
   afterPreprocessLines: number;
+  preprocessedLines: string[];
   finalTransactions: number;
+  parsedItems: ParsedStatementItem[];
 }
 
 export function debugItauParsing(text: string, ctx?: ParserContext): ItauDebugResult {
@@ -460,10 +463,13 @@ export function debugItauParsing(text: string, ctx?: ParserContext): ItauDebugRe
 
   return {
     totalSourceLines: sourceLines.length,
+    sourceLines,
     classificationCounts,
     classifications,
     afterPreprocessLines: preprocessed.length,
+    preprocessedLines: preprocessed,
     finalTransactions: finalItems.length,
+    parsedItems: finalItems,
   };
 }
 

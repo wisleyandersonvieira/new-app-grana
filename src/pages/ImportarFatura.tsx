@@ -478,6 +478,9 @@ export default function ImportarFatura() {
                 <Button onClick={handleImport} disabled={loading}>
                   <Sparkles className="mr-2 h-4 w-4" /> Analisar Fatura
                 </Button>
+                <Button variant="secondary" onClick={() => navigate('/importar-fatura/diagnostico')}>
+                  Ver diagnóstico
+                </Button>
                 <Button variant="outline" onClick={() => navigate('/faturas')}>Cancelar</Button>
                 <Button variant="ghost" onClick={() => navigate('/nova-fatura')}>Voltar</Button>
               </div>

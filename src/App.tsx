@@ -26,6 +26,7 @@ import Faturas from "./pages/Faturas";
 import NovaFatura from "./pages/NovaFatura";
 import FaturaDetalhe from "./pages/FaturaDetalhe";
 import ImportarFatura from "./pages/ImportarFatura";
+import DiagnosticoImportacaoFatura from "./pages/DiagnosticoImportacaoFatura";
 import Transferencias from "./pages/Transferencias";
 import NovaTransferencia from "./pages/NovaTransferencia";
 import Bloqueios from "./pages/Bloqueios";
@@ -80,6 +81,7 @@ const App = () => (
                       <Route path="/faturas" element={<Faturas />} />
                       <Route path="/nova-fatura" element={<NovaFatura />} />
                       <Route path="/importar-fatura" element={<ImportarFatura />} />
+                      <Route path="/importar-fatura/diagnostico" element={<DiagnosticoImportacaoFatura />} />
                       <Route path="/fatura/:id" element={<FaturaDetalhe />} />
                       <Route path="/transferencias" element={<Transferencias />} />
                       <Route path="/nova-transferencia" element={<NovaTransferencia />} />

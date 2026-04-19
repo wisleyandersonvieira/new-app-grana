@@ -33,79 +33,6 @@ function groupTokensByVisualRows(tokens: TextToken[]): TextToken[][] {
   return rows;
 }
 
-function isDateOnlyLine(line: string): boolean {
-  return /^\d{1,2}\/\d{2}$/.test(line.trim());
-}
-
-function isAmountOnlyLine(line: string): boolean {
-  return /^-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/.test(line.trim());
-}
-
-function isInstallmentOnlyLine(line: string): boolean {
-  return /^\d{1,2}\/\d{2}$/.test(line.trim());
-}
-
-function rebuildExtractedLines(lines: string[]): string[] {
-  const rebuilt: string[] = [];
-
-  let index = 0;
-  while (index < lines.length) {
-    const current = lines[index].trim();
-    if (!current) {
-      index += 1;
-      continue;
-    }
-
-    if (!isDateOnlyLine(current)) {
-      rebuilt.push(current);
-      index += 1;
-      continue;
-    }
-
-    const date = current;
-    const parts: string[] = [];
-    let amount: string | null = null;
-    let lookahead = index + 1;
-
-    while (lookahead < lines.length) {
-      const candidate = lines[lookahead].trim();
-      if (!candidate) {
-        lookahead += 1;
-        continue;
-      }
-
-      if (isAmountOnlyLine(candidate)) {
-        amount = candidate;
-        lookahead += 1;
-        break;
-      }
-
-      if (isDateOnlyLine(candidate) && parts.length > 0) {
-        if (isInstallmentOnlyLine(candidate)) {
-          parts.push(candidate);
-          lookahead += 1;
-          continue;
-        }
-        break;
-      }
-
-      parts.push(candidate);
-      lookahead += 1;
-    }
-
-    if (parts.length > 0 && amount) {
-      rebuilt.push(`${date} ${parts.join(' ')} ${amount}`.replace(/\s+/g, ' ').trim());
-      index = lookahead;
-      continue;
-    }
-
-    rebuilt.push(current);
-    index += 1;
-  }
-
-  return rebuilt;
-}
-
 /**
  * Splits tokens into columns when a page has a clear two-column layout.
  * Detects the split by looking for a gap in X positions.
@@ -188,7 +115,7 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
 function tokensToLines(tokens: TextToken[]): string[] {
   if (tokens.length === 0) return [];
 
-  const lines = groupTokensByVisualRows(tokens).map((line) => {
+  return groupTokensByVisualRows(tokens).map((line) => {
     line.sort((a, b) => a.x - b.x);
     let result = '';
     for (let i = 0; i < line.length; i++) {
@@ -200,8 +127,6 @@ function tokensToLines(tokens: TextToken[]): string[] {
     }
     return result.trim();
   });
-
-  return rebuildExtractedLines(lines);
 }
 
 export async function extractTextFromPdf(file: File): Promise<string> {
