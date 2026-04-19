@@ -81,6 +81,27 @@ describe('splitIntoColumns', () => {
     const rightCol = cols[1];
     expect(rightCol.every((t) => t.x + t.width / 2 >= MID)).toBe(true);
   });
+
+  it('divide página de continuação com valores isolados à esquerda e compras à direita', () => {
+    const makeContinuationRow = (y: number, leftAmount: string, rightDate: string, rightDesc: string, rightAmount: string) => [
+      { x: 220, y, str: leftAmount, width: 40 },
+      { x: MID + 20, y, str: rightDate, width: 28 },
+      { x: MID + 55, y, str: rightDesc, width: 135 },
+      { x: MID + 225, y, str: rightAmount, width: 42 },
+    ];
+
+    const tokens = [
+      ...makeContinuationRow(700, '930,15', '03/03', 'ARENA TENNISTORM', '435,00'),
+      ...makeContinuationRow(685, '1.765,52', '04/03', 'Indigo', '16,00'),
+      ...makeContinuationRow(670, '487,89', '04/03', 'POSTO PRESIDENTE', '486,62'),
+      ...makeContinuationRow(655, '354,01', '07/03', 'KANPAI', '101,90'),
+    ];
+
+    const cols = splitIntoColumns(tokens, PAGE_WIDTH);
+    expect(cols).toHaveLength(2);
+    expect(cols[0].every((t) => t.x + t.width / 2 < MID)).toBe(true);
+    expect(cols[1].every((t) => t.x + t.width / 2 >= MID)).toBe(true);
+  });
 });
 
 // ── fatura import helpers ─────────────────────────────────────────────────────
@@ -164,6 +185,7 @@ describe('fatura import helpers', () => {
       expect(isItauFutureInstallmentSectionStart('Compras parceladas - próximas faturas')).toBe(true);
       expect(isItauTransactionLine('22/08 VIVARA MOR 08/10 930,15')).toBe(true);
       expect(isItauTransactionLine('03/04 ESTORNO DE ANUIDADE DIF - 52,50')).toBe(true);
+      expect(classifyItauLine('10/04/2026 00472761665/1248012 FT')).toBe('unknown');
     });
 
     it('reconstrói linhas quebradas do Itaú antes do parser principal', () => {
@@ -188,6 +210,8 @@ describe('fatura import helpers', () => {
       const lines = preprocessItauText([
         'Banco Itaú S.A.',
         'Resumo da fatura em R$',
+        'Vencimento: 10/04/2026',
+        'R$ 19.107,25',
         'Lançamentos: compras e saques',
         '22/08',
         'VIVARA MOR',
@@ -204,6 +228,23 @@ describe('fatura import helpers', () => {
       expect(lines).toEqual([
         '22/08 VIVARA MOR 08/10 930,15',
         '10/03 LOVABLE 167,74',
+      ]);
+    });
+
+    it('ignora toda a capa da fatura antes da primeira seção de lançamentos', () => {
+      const lines = preprocessItauText([
+        'Vencimento: 10/04/2026',
+        'Pagamento mínimo:',
+        'R$ 1.910,73',
+        'Valor do Documento R$ 19.107,25',
+        'Lançamentos: compras e saques',
+        '02/03 AV SAO PAULO-CT 02/02',
+        'ALIMENTAÇÃO .MARINGA',
+        '269,88',
+      ].join('\n'));
+
+      expect(lines).toEqual([
+        '02/03 AV SAO PAULO-CT 02/02 269,88',
       ]);
     });
 
@@ -298,6 +339,33 @@ describe('fatura import helpers', () => {
       expect(vivara).toBeDefined();
       expect(vivara?.valor).toBe(930.15);
       expect(vivara?.parcelas).toBe('8/10');
+    });
+
+    it('reconstrói continuação em que a coluna esquerda traz só valores e a direita novas compras', () => {
+      const text = withHeader(
+        [
+          '22/08 VIVARA MOR 08/10',
+          'DIVERSOS .SAO PAULO',
+          '28/08 LATAM AIR 08/08',
+          'SAO PAULO',
+          '02/03 AV SAO PAULO-CT 02/02',
+          'ALIMENTAÇÃO .MARINGA',
+          '930,15',
+          '03/03 ARENA TENNISTORM 435,00',
+          '1.765,52',
+          '04/03 POSTO PRESIDENTE 486,62',
+          '269,88',
+          '07/03 KANPAI 101,90',
+        ].join('\n'),
+      );
+
+      const items = parseStatementText(text, CTX);
+      expect(items.find((item) => item.descricao_normalizada.includes('vivara'))?.valor).toBe(930.15);
+      expect(items.find((item) => item.descricao_normalizada.includes('latam'))?.valor).toBe(1765.52);
+      expect(items.find((item) => item.descricao_normalizada.includes('av sao paulo'))?.valor).toBe(269.88);
+      expect(items.find((item) => item.descricao_normalizada.includes('arena tennistorm'))?.valor).toBe(435.00);
+      expect(items.find((item) => item.descricao_normalizada.includes('posto presidente'))?.valor).toBe(486.62);
+      expect(items.find((item) => item.descricao_normalizada.includes('kanpai'))?.valor).toBe(101.90);
     });
 
     it('exclui lançamentos da seção "Compras parceladas – próximas faturas"', () => {

@@ -8,6 +8,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 type TextToken = { x: number; y: number; str: string; width: number };
 const ROW_Y_TOLERANCE = 3;
 
+function isAmountLikeToken(value: string): boolean {
+  return /^-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/.test(value.trim());
+}
+
 function groupTokensByVisualRows(tokens: TextToken[]): TextToken[][] {
   if (tokens.length === 0) return [];
 
@@ -65,6 +69,8 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
   const rightColBoundary = midpoint + pageWidth * 0.3;
   let leftRichRows = 0;
   let rightRichRows = 0;
+  let leftAmountRows = 0;
+  let mixedRows = 0;
 
   for (const row of visualRows) {
     const minX = Math.min(...row.map((t) => t.x));
@@ -82,9 +88,23 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
     const rightTokensInRow = row.filter((t) => t.x + t.width / 2 >= midpoint);
     if (leftTokensInRow.length >= 2) leftRichRows += 1;
     if (rightTokensInRow.length >= 2) rightRichRows += 1;
+    if (leftTokensInRow.length > 0 && rightTokensInRow.length > 0) mixedRows += 1;
+    if (
+      leftTokensInRow.length === 1 &&
+      rightTokensInRow.length >= 2 &&
+      isAmountLikeToken(leftTokensInRow[0].str)
+    ) {
+      leftAmountRows += 1;
+    }
   }
 
-  if (leftRowCount < 3 || rightRowCount < 3 || leftRichRows < 2 || rightRichRows < 2) {
+  const hasStrongTwoColumnSignal =
+    leftRowCount >= 3 &&
+    rightRowCount >= 3 &&
+    rightRichRows >= 2 &&
+    (leftRichRows >= 2 || leftAmountRows >= 2 || mixedRows >= 3);
+
+  if (!hasStrongTwoColumnSignal) {
     return [tokens];
   }
 
@@ -101,7 +121,7 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
     if (rightRow.length > 0) rightTokens.push(...rightRow);
   }
 
-  if (leftTokens.length > 5 && rightTokens.length > 5) {
+  if (leftTokens.length >= 3 && rightTokens.length >= 6) {
     return [leftTokens, rightTokens];
   }
 
