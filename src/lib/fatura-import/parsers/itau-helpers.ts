@@ -499,6 +499,10 @@ function parseStructuredItauLines(
   let currentCardLast4: string | null = null;
   let stopped = false;
   const pendingAmountBlocks: Array<{ blockLines: string[]; source: ItauSourceLine }> = [];
+  // Amounts that appeared before their description line in y-sorted order (value token
+  // positioned slightly above the description baseline in the PDF). Kept in FIFO order
+  // so each is paired with the next partial transaction that lacks an amount.
+  const pendingLeadingAmounts: string[] = [];
 
   const registerFailure = (source: ItauSourceLine, reason: string) => {
     diagnostics.failures.push({
@@ -567,14 +571,12 @@ function parseStructuredItauLines(
               continue;
             }
           }
+        } else {
+          // No pending block waiting — this amount appeared before its description
+          // (value token has slightly higher y than description token in the PDF).
+          // Queue it to be paired with the next partial transaction.
+          pendingLeadingAmounts.push(line);
         }
-
-        diagnostics.orphanAmountLines.push({
-          line,
-          pageNumber: source.pageNumber,
-          columnIndex: source.columnIndex,
-          reason: 'Valor monetário sem transação associada',
-        });
         continue;
       }
 
@@ -612,7 +614,7 @@ function parseStructuredItauLines(
         }
         if (
           isAmountOnlyLine(nextLine) &&
-          pendingAmountBlocks.length > 0
+          (pendingAmountBlocks.length > 0 || pendingLeadingAmounts.length > 0)
         ) {
           break;
         }
@@ -630,6 +632,15 @@ function parseStructuredItauLines(
       const rebuilt = buildTransactionLine(blockLines);
       if (!rebuilt) {
         if (blockHasDescriptionContent(blockLines)) {
+          if (pendingLeadingAmounts.length > 0) {
+            const leadingAmount = pendingLeadingAmounts.shift()!;
+            const rebuiltWithLeading = buildTransactionLine([...blockLines, leadingAmount]);
+            if (rebuiltWithLeading) {
+              appendRebuiltTransaction(rebuiltWithLeading, source, ctx, items, rebuiltLines, diagnostics, registerFailure);
+              continue;
+            }
+            pendingLeadingAmounts.unshift(leadingAmount);
+          }
           pendingAmountBlocks.push({ blockLines: [...blockLines], source });
           continue;
         }
@@ -647,6 +658,15 @@ function parseStructuredItauLines(
     }
 
     if (stopped) break;
+  }
+
+  for (const orphan of pendingLeadingAmounts) {
+    diagnostics.orphanAmountLines.push({
+      line: orphan,
+      pageNumber: 0,
+      columnIndex: 0,
+      reason: 'Valor monetário leading não foi associado a nenhuma transação',
+    });
   }
 
   diagnostics.capturedTransactions = items.length;

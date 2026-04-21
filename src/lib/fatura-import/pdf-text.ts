@@ -30,10 +30,7 @@ export type PdfExtractedDocument = {
   text: string;
   pages: PdfPageLayout[];
 };
-// 5pt tolerance handles real Itaú PDFs where value tokens are positioned
-// slightly above their description tokens (up to ~4pt offset), preventing
-// amounts from being treated as orphan lines and matched to the wrong transaction.
-const ROW_Y_TOLERANCE = 5;
+const ROW_Y_TOLERANCE = 3;
 
 function isAmountLikeToken(value: string): boolean {
   return /^-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/.test(value.trim());
