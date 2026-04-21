@@ -372,7 +372,7 @@ export default function RelatorioCompleto() {
       // itens_fatura.competencia is DATE (YYYY-MM-01). Apply server-side range filter
       // to avoid hitting Supabase's default 1000-row limit when accounts have many items.
       const itensCompStart = `${dataInicio}-01`;
-      const itensCompEnd = `${dataFim}-31`;
+      const itensCompEnd = getMonthDateRange(dataFim).end;
       let itensFaturaQuery = supabase
         .from('itens_fatura')
         .select('fatura_id, valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')
