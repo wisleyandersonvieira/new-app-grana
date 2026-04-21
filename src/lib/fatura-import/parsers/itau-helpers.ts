@@ -48,12 +48,18 @@ export interface ItauParseResult {
 }
 
 function inferItauTransactionDate(dayMonth: string, competencia: string): string | null {
-  const [competenciaYear] = competencia.split('-').map(Number);
+  const [competenciaYear, competenciaMonth] = competencia.split('-').map(Number);
   const [day, month] = dayMonth.split('/').map(Number);
 
-  if (!competenciaYear || !day || !month) return null;
+  if (!competenciaYear || !competenciaMonth || !day || !month) return null;
 
-  return `${competenciaYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  // Transactions more than 2 months ahead of the billing period are installment
+  // purchases from the previous year (e.g. 22/08 in a 2026-03 bill → 2025-08-22).
+  // Transactions within 2 months ahead are still within the current billing cycle
+  // (e.g. 03/04 in a 2026-03 bill → 2026-04-03).
+  const inferredYear = month - competenciaMonth > 2 ? competenciaYear - 1 : competenciaYear;
+
+  return `${inferredYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 function normalizeItauLine(line: string): string {
