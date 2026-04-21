@@ -66,7 +66,7 @@ function groupTokensByVisualRows<T extends TextToken>(tokens: T[]): T[][] {
  * Detects the split by looking for a gap in X positions.
  * Exported for unit testing.
  */
-export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][] {
+export function splitIntoColumns<T extends TextToken>(tokens: T[], pageWidth: number): T[][] {
   if (tokens.length === 0) return [[]];
 
   const midpoint = pageWidth / 2;
@@ -134,8 +134,8 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
 
   // 3) Split each visual row into a left and/or right segment using the page midpoint.
   // This prevents rows from different columns but same Y from being merged together.
-  const leftTokens: TextToken[] = [];
-  const rightTokens: TextToken[] = [];
+  const leftTokens: T[] = [];
+  const rightTokens: T[] = [];
 
   for (const row of visualRows) {
     const leftRow = row.filter((token) => token.x + token.width / 2 < midpoint);
