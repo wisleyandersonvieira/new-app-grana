@@ -36,13 +36,13 @@ function isAmountLikeToken(value: string): boolean {
   return /^-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/.test(value.trim());
 }
 
-function groupTokensByVisualRows(tokens: TextToken[]): TextToken[][] {
+function groupTokensByVisualRows<T extends TextToken>(tokens: T[]): T[][] {
   if (tokens.length === 0) return [];
 
   const sorted = [...tokens].sort((a, b) => b.y - a.y || a.x - b.x);
-  const rows: TextToken[][] = [];
+  const rows: T[][] = [];
 
-  let currentRow: TextToken[] = [sorted[0]];
+  let currentRow: T[] = [sorted[0]];
   let currentY = sorted[0].y;
 
   for (let index = 1; index < sorted.length; index += 1) {
