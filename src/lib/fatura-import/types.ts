@@ -30,25 +30,11 @@ export type ImportedInvoiceItem = ParsedStatementItem & {
   importado_pdf: boolean;
 };
 
+import type { PdfExtractedDocument } from './pdf-text';
+
 export type ParserContext = {
   competencia: string;
-  pdfLayout?: {
-    text: string;
-    pages: Array<{
-      pageNumber: number;
-      width: number;
-      height: number;
-      columns: Array<{
-        columnIndex: number;
-        lines: Array<{
-          text: string;
-          pageNumber: number;
-          columnIndex: number;
-          y: number;
-        }>;
-      }>;
-    }>;
-  };
+  pdfLayout?: PdfExtractedDocument;
   expectedTotalCurrentCharges?: number | null;
   statementDate?: string | null;
   dueDate?: string | null;
