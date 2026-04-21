@@ -11,6 +11,8 @@ import { splitIntoColumns } from '@/lib/fatura-import/pdf-text';
 import {
   classifyItauLine,
   debugItauParsing,
+  hasMultipleDates,
+  parseItauDocument,
   rebuildItauTransactionBlocks,
   rebuildBrokenItauTransactionLines,
 } from '@/lib/fatura-import/parsers/itau-helpers';
@@ -25,6 +27,7 @@ import {
   parseItauStatement,
   preprocessItauText,
 } from '@/lib/fatura-import/parsers/itau-helpers';
+import type { PdfExtractedDocument } from '@/lib/fatura-import/pdf-text';
 
 // ── splitIntoColumns ──────────────────────────────────────────────────────────
 
@@ -557,6 +560,137 @@ describe('fatura import helpers', () => {
       expect(items.find((i) => i.descricao_normalizada.includes('seattle'))).toBeUndefined();
       expect(items.find((i) => i.descricao_normalizada.includes('austin'))).toBeUndefined();
     });
+  });
+});
+
+describe('Itaú parser estruturado por página/coluna/linha', () => {
+  const CTX = {
+    competencia: '2026-04',
+    dueDate: '2026-04-10',
+    expectedTotalCurrentCharges: 19107.25,
+  };
+
+  function buildStructuredItauDoc(leftRows: string[], rightRows: string[]): PdfExtractedDocument {
+    const buildColumn = (rows: string[], columnIndex: number) => ({
+      columnIndex,
+      tokens: [],
+      lines: rows.map((text, index) => ({
+        text,
+        tokens: [],
+        pageNumber: 1,
+        columnIndex,
+        y: 800 - index * 12,
+      })),
+    });
+
+    return {
+      text: [...leftRows, ...rightRows].join('\n'),
+      pages: [
+        {
+          pageNumber: 1,
+          width: 595,
+          height: 842,
+          tokens: [],
+          columns: [buildColumn(leftRows, 0), buildColumn(rightRows, 1)],
+        },
+      ],
+    };
+  }
+
+  it('divide linhas com múltiplas datas antes de salvar', () => {
+    expect(hasMultipleDates('03/03 CAFE MINEIRO PANIFICAD 346,00 04/03 ARENA TENNISTORM 435,00')).toBe(true);
+
+    const items = parseStatementText(
+      [
+        'Banco Itaú S.A.',
+        'Resumo da fatura em R$',
+        'Lançamentos: compras e saques',
+        '03/03 CAFE MINEIRO PANIFICAD 346,00 04/03 ARENA TENNISTORM 435,00',
+      ].join('\n'),
+      { competencia: '2026-04' },
+    );
+
+    expect(items).toHaveLength(2);
+    expect(items.find((item) => item.descricao_original === 'CAFE MINEIRO PANIFICAD')?.valor).toBe(346);
+    expect(items.find((item) => item.descricao_original === 'ARENA TENNISTORM')?.valor).toBe(435);
+  });
+
+  it('parseia a fatura Itaú em duas colunas com total, IOF e diagnóstico zerado', () => {
+    const namedTransactions = [
+      '22/08 VIVARA MOR 08/10 930,15',
+      '03/03 ARENA TENNISTORM 435,00',
+      '03/03 CAFE MINEIRO PANIFICAD 346,00',
+      '18/03 NETFLIX ENTRETENIMENTO 59,90',
+      '20/03 SUPABASE 343,84',
+      '04/03 ANUIDADE DIFERENCI07/12 105,00',
+      '03/04 ESTORNO DE ANUIDADE DIF - 52,50',
+    ];
+
+    const fillerValues = [
+      ...Array.from({ length: 75 }, () => 200),
+      1767.53,
+    ];
+    const fillerTransactions = fillerValues.map((value, index) => {
+      const day = String((index % 28) + 1).padStart(2, '0');
+      const month = String((index % 3) + 1).padStart(2, '0');
+      return `${day}/${month} ESTABELECIMENTO TESTE ${String(index + 1).padStart(2, '0')} ${value.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
+    });
+
+    const leftRows = [
+      'Banco Itaú S.A.',
+      'Resumo da fatura em R$',
+      'Lançamentos: compras e saques',
+      'DATA ESTABELECIMENTO VALOR EM R$',
+      'Lançamentos no cartão (final 8275) 11.096,14',
+      namedTransactions[0],
+      'DIVERSOS .SAO PAULO',
+      namedTransactions[2],
+      'ALIMENTAÇÃO .MARINGA',
+      namedTransactions[5],
+      namedTransactions[6],
+      ...fillerTransactions.slice(0, 39),
+    ];
+
+    const rightRows = [
+      'Lançamentos: compras e saques',
+      'DATA ESTABELECIMENTO VALOR EM R$',
+      'Lançamentos no cartão (final 9286) 8.011,11',
+      namedTransactions[1],
+      namedTransactions[3],
+      namedTransactions[4],
+      '18/03 UI BAKERY INC. 66,36',
+      'AUSTIN 12,00 USD 12,00',
+      'Dólar de Conversão R$ 5,53',
+      ...fillerTransactions.slice(39),
+      'Repasse de IOF em R$ 80,83',
+      'Repasse de IOF em R$ 25,14',
+      'Total dos lançamentos atuais R$ 19.107,25',
+      'Compras parceladas - próximas faturas',
+      '27/09 CLUBE LIVELO*Clube08/12 24,90',
+    ];
+
+    const parsed = parseItauDocument(buildStructuredItauDoc(leftRows, rightRows), CTX);
+
+    expect(parsed.items).toHaveLength(86);
+    expect(parsed.diagnostics.capturedTransactions).toBe(86);
+    expect(parsed.diagnostics.capturedSum).toBe(19107.25);
+    expect(parsed.diagnostics.expectedTotal).toBe(19107.25);
+    expect(parsed.diagnostics.difference).toBe(0);
+    expect(parsed.diagnostics.ignoredDateLines).toEqual([]);
+    expect(parsed.diagnostics.orphanAmountLines).toEqual([]);
+
+    expect(parsed.items.find((item) => item.descricao_original === 'VIVARA MOR 08/10')?.valor).toBe(930.15);
+    expect(parsed.items.find((item) => item.descricao_original === 'ARENA TENNISTORM')?.valor).toBe(435);
+    expect(parsed.items.find((item) => item.descricao_original === 'CAFE MINEIRO PANIFICAD')?.valor).toBe(346);
+    expect(parsed.items.find((item) => item.descricao_original === 'NETFLIX ENTRETENIMENTO')?.valor).toBe(59.9);
+    expect(parsed.items.find((item) => item.descricao_original === 'SUPABASE')?.valor).toBe(343.84);
+    expect(parsed.items.find((item) => item.descricao_original === 'ANUIDADE DIFERENCI07/12')?.valor).toBe(105);
+    expect(parsed.items.find((item) => item.descricao_original === 'ESTORNO DE ANUIDADE DIF')?.valor).toBe(-52.5);
+    expect(parsed.items.some((item) => item.descricao_original.includes('Compras parceladas'))).toBe(false);
+    expect(parsed.items.some((item) => item.descricao_original.includes('CLUBE LIVELO'))).toBe(false);
   });
 });
 

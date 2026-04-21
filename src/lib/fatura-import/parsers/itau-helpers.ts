@@ -1,24 +1,59 @@
 import {
-  normalizeInstallmentText,
+  extractInstallmentInfo,
   normalizeStatementDescription,
   parseBrazilianCurrency,
   removeNoisePrefixBeforeDate,
   stripAccents,
 } from '../normalization';
 import type { ParsedStatementItem, ParserContext } from '../types';
+import type { PdfExtractedDocument } from '../pdf-text';
 
 const ITAU_DATE_START = /^\d{1,2}\/\d{2}(?!\/\d{2,4})\b/;
 const ITAU_DATE_ONLY = /^\d{1,2}\/\d{2}(?!\/\d{2,4})$/;
-const ITAU_AMOUNT_ONLY = /^-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/;
-const ITAU_AMOUNT_AT_END = /(-\s*)?\d{1,3}(?:\.\d{3})*,\d{2}$/;
+const ITAU_AMOUNT_ONLY = /^(?:R\$\s*)?-?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/;
+const ITAU_AMOUNT_AT_END = /((?:R\$\s*)?-?\s*\d{1,3}(?:\.\d{3})*,\d{2}|-\s*\d{1,3}(?:\.\d{3})*,\d{2})$/;
+const ITAU_DATE_GLOBAL = /\b\d{1,2}\/\d{2}\b/g;
+const ITAU_IOF_REPASSE = /^repasse de iof em r\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})$/i;
+const ITAU_TOTAL_CURRENT_CHARGES = /total dos lancamentos atuais.*?(\d{1,3}(?:\.\d{3})*,\d{2})/i;
+
+type ItauSourceLine = {
+  text: string;
+  pageNumber: number;
+  columnIndex: number;
+  y: number;
+  index: number;
+};
+
+type ItauDiagnosticLine = {
+  line: string;
+  pageNumber: number;
+  columnIndex: number;
+  reason: string;
+};
+
+export interface ItauParsingDiagnostics {
+  capturedTransactions: number;
+  capturedSum: number;
+  expectedTotal: number | null;
+  difference: number | null;
+  ignoredDateLines: ItauDiagnosticLine[];
+  orphanAmountLines: ItauDiagnosticLine[];
+  failures: ItauDiagnosticLine[];
+}
+
+export interface ItauParseResult {
+  items: ParsedStatementItem[];
+  diagnostics: ItauParsingDiagnostics;
+  rebuiltLines: string[];
+}
 
 function inferItauTransactionDate(dayMonth: string, competencia: string): string | null {
   const [competenciaYear] = competencia.split('-').map(Number);
-  const [day, transactionMonth] = dayMonth.split('/').map(Number);
+  const [day, month] = dayMonth.split('/').map(Number);
 
-  if (!competenciaYear || !day || !transactionMonth) return null;
+  if (!competenciaYear || !day || !month) return null;
 
-  return `${competenciaYear}-${String(transactionMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return `${competenciaYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 function normalizeItauLine(line: string): string {
@@ -29,6 +64,16 @@ function normalizeItauLine(line: string): string {
 
 function normalizeItauTextForMatch(line: string): string {
   return stripAccents(normalizeItauLine(line)).toLowerCase();
+}
+
+function getFallbackIofDate(ctx: ParserContext): string | null {
+  return ctx.statementDate ?? ctx.dueDate ?? `${ctx.competencia}-01`;
+}
+
+function extractCardLast4(line: string): string | null {
+  const cleaned = cleanItauNoisePrefix(line);
+  const match = cleaned.match(/final\s+(\d{4})/i);
+  return match?.[1] ?? null;
 }
 
 function isItauHeaderOrNoiseLine(line: string): boolean {
@@ -61,6 +106,11 @@ function isItauHeaderOrNoiseLine(line: string): boolean {
     /^valor em r\$$/,
     /^uso do banco\b/,
     /^sacador avalista/,
+    /^simulacao\b/,
+    /^parcelamento da fatura\b/,
+    /^total transacoes inter\./,
+    /^total lancamentos inter\./,
+    /^total dos lancamentos atuais/,
   ].some((pattern) => pattern.test(normalized));
 }
 
@@ -73,19 +123,12 @@ export function isItauCategoryCityLine(line: string): boolean {
   if (!cleaned || ITAU_DATE_START.test(cleaned) || ITAU_AMOUNT_AT_END.test(cleaned)) return false;
 
   const upper = stripAccents(cleaned).toUpperCase();
-
-  // Lines with URL characters or merchant-name punctuation are never category/city headers.
-  // e.g. "APPLE.COM/BILL", "AMAZON MKTPL*BE8", "USER@HOST"
   if (/[/*@#]/.test(upper)) return false;
 
   const lettersOnly = upper.replace(/[^A-Z]/g, '');
   if (lettersOnly.length < 6) return false;
 
   const mostlyUppercase = lettersOnly.length >= Math.max(6, Math.floor(cleaned.length * 0.45));
-  // Real Itaú category/city lines use one of two separator patterns:
-  //   " .CITY"   e.g. "ALIMENTAÇÃO .MARINGA"
-  //   "WORD.WORD" e.g. "TURISMO E ENTRETENIM.CAMPO GRANDE" (5+ chars on each side)
-  // Short TLD-style dots like ".COM" (3 chars) are merchant URLs, not separators.
   const hasCategoryCitySeparator =
     /\s\.[A-Z]/.test(upper) || /[A-Z]{5,}\.[A-Z]{4,}/.test(upper);
 
@@ -111,7 +154,6 @@ function isItauTransactionSectionHeader(line: string): boolean {
 
 function isItauLooseMetadataLine(line: string): boolean {
   const normalized = normalizeItauTextForMatch(line);
-
   return [
     /^data estabelecimento(?: valor em r\$)?$/,
     /^data produtos\/servicos$/,
@@ -122,12 +164,16 @@ function isItauLooseMetadataLine(line: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+function isItauIofRepasseLine(line: string): boolean {
+  return ITAU_IOF_REPASSE.test(cleanItauNoisePrefix(line));
+}
+
 export function isItauInternationalMetadataLine(line: string): boolean {
   const normalized = normalizeItauTextForMatch(line);
   const startsWithDate = ITAU_DATE_START.test(cleanItauNoisePrefix(line));
 
+  if (isItauIofRepasseLine(line)) return false;
   if (/^dolar de conversao\b/.test(normalized)) return true;
-  if (/^repasse de iof\b/.test(normalized)) return true;
   if (/^total transacoes inter\./.test(normalized)) return true;
   if (/^total lancamentos inter\./.test(normalized)) return true;
   if (!startsWithDate && /\b(?:usd|brl)\b/.test(normalized)) return true;
@@ -143,7 +189,6 @@ export function isItauFutureInstallmentSectionStart(line: string): boolean {
 function isItauFutureSectionSoftStop(line: string): boolean {
   const normalized = normalizeItauTextForMatch(line);
   return [
-    /lancamentos:\s*produtos e servicos/,
     /encargos cobrados nesta fatura/,
     /limites de credito/,
   ].some((pattern) => pattern.test(normalized));
@@ -169,13 +214,132 @@ function isIgnorableItauLine(line: string): boolean {
   );
 }
 
+export const hasMultipleDates = (text: string) =>
+  (text.match(/\b\d{2}\/\d{2}\b/g) || []).length > 1;
+
+function findTransactionDateMatches(text: string) {
+  const cleaned = cleanItauNoisePrefix(text);
+  return Array.from(cleaned.matchAll(ITAU_DATE_GLOBAL)).filter((match) => {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    const after = cleaned.slice(end);
+    if (!after.startsWith(' ')) return false;
+    if (start === 0) return true;
+
+    const before = cleaned.slice(0, start).trimEnd();
+    return ITAU_AMOUNT_AT_END.test(before);
+  });
+}
+
+function hasMultipleTransactionDates(text: string) {
+  return findTransactionDateMatches(text).length > 1;
+}
+
+function splitByEmbeddedDates(line: string): string[] {
+  const cleaned = cleanItauNoisePrefix(line);
+  const matches = findTransactionDateMatches(cleaned);
+  if (matches.length <= 1) return [cleaned];
+
+  const segments: string[] = [];
+  for (let index = 0; index < matches.length; index += 1) {
+    const start = matches[index].index ?? 0;
+    const end = index + 1 < matches.length ? (matches[index + 1].index ?? cleaned.length) : cleaned.length;
+    const segment = cleaned.slice(start, end).trim();
+    if (segment) segments.push(segment);
+  }
+  return segments;
+}
+
+function buildTransactionLine(blockLines: string[]): string | null {
+  const fragments = blockLines
+    .map((line) => cleanItauNoisePrefix(line))
+    .filter(Boolean);
+
+  if (fragments.length === 0) return null;
+
+  const first = fragments[0];
+  if (!ITAU_DATE_START.test(first)) return null;
+
+  const firstMatch = first.match(/^(\d{1,2}\/\d{2})\s*(.*)$/);
+  if (!firstMatch) return null;
+
+  const parts = [firstMatch[2].trim()].filter(Boolean);
+  let amount = first.match(ITAU_AMOUNT_AT_END)?.[1] ?? null;
+  if (amount && parts.length > 0) {
+    parts[0] = parts[0].slice(0, parts[0].length - amount.length).trim();
+  }
+
+  for (let index = 1; index < fragments.length; index += 1) {
+    const fragment = fragments[index];
+    if (isIgnorableItauLine(fragment) || isItauFutureSectionSoftStop(fragment)) continue;
+    if (isAmountOnlyLine(fragment)) {
+      amount = fragment;
+      continue;
+    }
+    const fragmentAmount = fragment.match(ITAU_AMOUNT_AT_END)?.[1];
+    if (fragmentAmount) {
+      amount = fragmentAmount;
+      const withoutAmount = fragment.slice(0, fragment.length - fragmentAmount.length).trim();
+      if (withoutAmount) parts.push(withoutAmount);
+      continue;
+    }
+    parts.push(fragment);
+  }
+
+  if (!amount) return null;
+
+  const body = parts.join(' ').replace(/\s+/g, ' ').trim();
+  if (!body) return null;
+  return `${firstMatch[1]} ${body} ${amount}`.replace(/\s+/g, ' ').trim();
+}
+
+function blockHasDescriptionContent(blockLines: string[]): boolean {
+  if (blockLines.length === 0) return false;
+
+  const firstLine = cleanItauNoisePrefix(blockLines[0]);
+  const firstLineMatch = firstLine.match(/^(\d{1,2}\/\d{2})\s*(.*)$/);
+  if (firstLineMatch?.[2]?.trim()) return true;
+
+  return blockLines
+    .slice(1)
+    .map((line) => cleanItauNoisePrefix(line))
+    .some((line) => Boolean(line) && !isInstallmentOnlyLine(line) && !isAmountOnlyLine(line));
+}
+
+function blockHasAmount(blockLines: string[]): boolean {
+  return blockLines.some((line) => {
+    const cleaned = cleanItauNoisePrefix(line);
+    return isAmountOnlyLine(cleaned) || ITAU_AMOUNT_AT_END.test(cleaned);
+  });
+}
+
+function createIofItem(line: string, ctx: ParserContext, last4: string | null): ParsedStatementItem | null {
+  const cleaned = cleanItauNoisePrefix(line);
+  const match = cleaned.match(ITAU_IOF_REPASSE);
+  if (!match) return null;
+
+  return {
+    descricao_original: `Repasse de IOF - Cartão final ${last4 ?? 'XXXX'}`,
+    descricao_normalizada: normalizeStatementDescription(`Repasse de IOF - Cartão final ${last4 ?? 'XXXX'}`),
+    data_compra: getFallbackIofDate(ctx),
+    valor: parseBrazilianCurrency(match[1]),
+    parcelas: null,
+    banco_origem: 'itau',
+    observacao_parser: null,
+  };
+}
+
 export function extractItauTransactionParts(
   line: string,
   ctx: ParserContext,
 ): ParsedStatementItem | null {
   const cleaned = cleanItauNoisePrefix(line);
   if (!cleaned) return null;
+  if (isItauIofRepasseLine(cleaned)) {
+    return createIofItem(cleaned, ctx, null);
+  }
   if (isIgnorableItauLine(cleaned) || isItauFutureInstallmentSectionStart(cleaned)) return null;
+  if (hasMultipleTransactionDates(cleaned)) return null;
 
   const dateMatch = cleaned.match(/^(\d{1,2}\/\d{2})\s+(.+)$/);
   if (!dateMatch) return null;
@@ -183,7 +347,7 @@ export function extractItauTransactionParts(
   const amountMatch = cleaned.match(ITAU_AMOUNT_AT_END);
   if (!amountMatch) return null;
 
-  const rawAmount = amountMatch[0];
+  const rawAmount = amountMatch[1];
   const amount = parseBrazilianCurrency(rawAmount);
   if (Number.isNaN(amount)) return null;
 
@@ -191,19 +355,9 @@ export function extractItauTransactionParts(
     .slice(0, dateMatch[2].length - rawAmount.length)
     .trim();
 
-  if (!body) return null;
+  if (!body || hasMultipleTransactionDates(body)) return null;
 
-  let rawDescription = body;
-  let parcelas: string | null = null;
-
-  const installmentMatch = body.match(/(\d{1,2}\/\d{2})$/);
-  if (installmentMatch && installmentMatch.index !== undefined && installmentMatch.index > 0) {
-    parcelas = normalizeInstallmentText(installmentMatch[1]);
-    rawDescription = body.slice(0, installmentMatch.index).trim();
-  }
-
-  if (!rawDescription) return null;
-
+  const { parcelas } = extractInstallmentInfo(body);
   const descricaoOriginal = body;
   const descricaoNormalizada = normalizeStatementDescription(descricaoOriginal);
   if (!descricaoNormalizada) return null;
@@ -223,261 +377,301 @@ export function isItauTransactionLine(line: string): boolean {
   return extractItauTransactionParts(line, { competencia: '2026-01' }) !== null;
 }
 
+export function rebuildItauTransactionBlocks(lines: string[]): string[] {
+  const sourceLines = lines.map((line, index) => ({
+    text: cleanItauNoisePrefix(line),
+    pageNumber: 1,
+    columnIndex: 0,
+    y: 1000 - index,
+    index,
+  }));
+  return parseStructuredItauLines(sourceLines, { competencia: '2026-01' }).rebuiltLines;
+}
+
 export function rebuildBrokenItauTransactionLines(lines: string[]): string[] {
   return rebuildItauTransactionBlocks(lines);
 }
 
-function buildItauTransactionBlock(blockLines: string[]): string | null {
-  const cleaned = blockLines
+function buildTextSourceLines(text: string): ItauSourceLine[] {
+  return text
+    .split('\n')
     .map((line) => cleanItauNoisePrefix(line))
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-
-  if (cleaned.length === 0) return null;
-
-  const firstLine = cleaned[0];
-  if (!ITAU_DATE_START.test(firstLine)) return null;
-
-  if (cleaned.length === 1 && isItauTransactionLine(firstLine)) {
-    return firstLine;
-  }
-
-  const dateMatch = firstLine.match(/^(\d{1,2}\/\d{2})\s*(.*)$/);
-  if (!dateMatch) return null;
-
-  const [, transactionDate, firstBody] = dateMatch;
-  const fragments: string[] = [];
-  let rawAmount: string | null = null;
-
-  const consumeFragment = (fragment: string) => {
-    if (!fragment) return;
-    if (isIgnorableItauLine(fragment) || isItauFutureSectionSoftStop(fragment)) return;
-    if (isAmountOnlyLine(fragment)) {
-      rawAmount = fragment;
-      return;
-    }
-
-    const amountMatch = fragment.match(ITAU_AMOUNT_AT_END);
-    if (amountMatch) {
-      rawAmount = amountMatch[0];
-      const remainder = fragment.slice(0, fragment.length - amountMatch[0].length).trim();
-      if (remainder) fragments.push(remainder);
-      return;
-    }
-
-    fragments.push(fragment);
-  };
-
-  consumeFragment(firstBody.trim());
-
-  for (let index = 1; index < cleaned.length; index += 1) {
-    const line = cleaned[index];
-    const lineIsInstallmentFragment =
-      isInstallmentOnlyLine(line) &&
-      rawAmount === null &&
-      blockHasDescriptionContent(cleaned.slice(0, index));
-
-    if (ITAU_DATE_START.test(line) && !lineIsInstallmentFragment && !isAmountOnlyLine(line)) {
-      break;
-    }
-    consumeFragment(line);
-  }
-
-  if (!rawAmount) return null;
-
-  const body = fragments.join(' ').replace(/\s+/g, ' ').trim();
-  if (!body) return null;
-
-  return `${transactionDate} ${body} ${rawAmount}`.replace(/\s+/g, ' ').trim();
+    .map((line, index) => ({
+      text: line,
+      pageNumber: 1,
+      columnIndex: 0,
+      y: 1000 - index,
+      index,
+    }))
+    .filter((line) => line.text.length > 0);
 }
 
-function blockHasDescriptionContent(blockLines: string[]): boolean {
-  if (blockLines.length === 0) return false;
-
-  const firstLine = cleanItauNoisePrefix(blockLines[0]).replace(/\s+/g, ' ').trim();
-  const firstLineMatch = firstLine.match(/^(\d{1,2}\/\d{2})\s*(.*)$/);
-  if (firstLineMatch?.[2]?.trim()) return true;
-
-  return blockLines
-    .slice(1)
-    .map((line) => cleanItauNoisePrefix(line).replace(/\s+/g, ' ').trim())
-    .some((line) => Boolean(line) && !isInstallmentOnlyLine(line) && !isAmountOnlyLine(line));
-}
-
-export function rebuildItauTransactionBlocks(lines: string[]): string[] {
-  const rebuilt: string[] = [];
-  let statsComplete = 0;
-  let statsBlockRebuildOk = 0;
-  let statsBlockRebuildFail = 0;
-  let statsDiscarded = 0;
-
-  let currentBlock: string[] = [];
-  let pendingLeadingFragments: string[] = [];
-  let pendingAmountBlocks: string[][] = [];
-
-  const flushBlock = (block: string[]) => {
-    if (block.length === 0) return;
-    const rebuiltBlock = buildItauTransactionBlock(block);
-    if (rebuiltBlock) {
-      rebuilt.push(rebuiltBlock);
-      if (block.length === 1 && rebuiltBlock === cleanItauNoisePrefix(block[0])) {
-        statsComplete += 1;
-      } else {
-        statsBlockRebuildOk += 1;
-      }
-    } else {
-      statsBlockRebuildFail += 1;
-    }
-  };
-
-  const flushCurrentBlock = () => {
-    if (currentBlock.length === 0) return;
-    flushBlock(currentBlock);
-    currentBlock = [];
-  };
-
-  const enqueueCurrentBlockIfNeeded = () => {
-    if (currentBlock.length === 0) return false;
-    const rebuiltBlock = buildItauTransactionBlock(currentBlock);
-    if (rebuiltBlock) {
-      flushCurrentBlock();
-      return true;
-    }
-
-    if (blockHasDescriptionContent(currentBlock)) {
-      pendingAmountBlocks.push([...currentBlock]);
-      currentBlock = [];
-      return true;
-    }
-
-    flushCurrentBlock();
-    return true;
-  };
-
-  for (const sourceLine of lines) {
-    const line = cleanItauNoisePrefix(sourceLine).replace(/\s+/g, ' ').trim();
-    if (!line) continue;
-
-    if (isItauFutureInstallmentSectionStart(line)) {
-      flushCurrentBlock();
-      break;
-    }
-
-    if (isIgnorableItauLine(line) || isItauFutureSectionSoftStop(line)) {
-      if (currentBlock.length === 0) {
-        statsDiscarded += 1;
-      }
-      continue;
-    }
-
-    const lineIsInstallmentFragment =
-      isInstallmentOnlyLine(line) &&
-      currentBlock.length > 0 &&
-      buildItauTransactionBlock(currentBlock) === null &&
-      blockHasDescriptionContent(currentBlock);
-
-    if (isAmountOnlyLine(line) && pendingAmountBlocks.length > 0) {
-      pendingAmountBlocks[0].push(line);
-      flushBlock(pendingAmountBlocks.shift() ?? []);
-      continue;
-    }
-
-    if (ITAU_DATE_START.test(line) && !lineIsInstallmentFragment) {
-      enqueueCurrentBlockIfNeeded();
-      currentBlock = [line, ...pendingLeadingFragments];
-      pendingLeadingFragments = [];
-      continue;
-    }
-
-    if (currentBlock.length > 0) {
-      const currentAlreadyComplete = buildItauTransactionBlock(currentBlock) !== null;
-      if (currentAlreadyComplete) {
-        flushCurrentBlock();
-        pendingLeadingFragments = [line];
-      } else {
-        currentBlock.push(line);
-      }
-    } else {
-      pendingLeadingFragments.push(line);
-    }
-  }
-
-  flushCurrentBlock();
-  for (const pendingBlock of pendingAmountBlocks) {
-    flushBlock(pendingBlock);
-  }
-  statsDiscarded += pendingLeadingFragments.length;
-
-  console.debug(
-    '[itau-rebuild] in=%d complete=%d rebuilt-ok=%d rebuilt-fail=%d discarded=%d out=%d',
-    lines.length,
-    statsComplete,
-    statsBlockRebuildOk,
-    statsBlockRebuildFail,
-    statsDiscarded,
-    rebuilt.length,
+function buildLayoutSourceLines(document: PdfExtractedDocument): ItauSourceLine[] {
+  return document.pages.flatMap((page) =>
+    page.columns.flatMap((column) =>
+      column.lines
+        .slice()
+        .sort((a, b) => b.y - a.y)
+        .map((line, index) => ({
+          text: cleanItauNoisePrefix(line.text),
+          pageNumber: line.pageNumber,
+          columnIndex: line.columnIndex,
+          y: line.y,
+          index,
+        })),
+    ),
   );
-  if (statsBlockRebuildFail > 0) {
-    const failedLines: string[] = [];
-    let scanIdx = 0;
-    while (scanIdx < lines.length && failedLines.length < 20) {
-      const l = cleanItauNoisePrefix(lines[scanIdx]);
-      if (l && ITAU_DATE_START.test(l) && !isItauTransactionLine(l)) {
-        failedLines.push(l);
-      }
-      scanIdx += 1;
-    }
-    console.debug('[itau-rebuild] sample date-starting non-complete lines (first 20):', failedLines);
+}
+
+function findExpectedTotal(sourceLines: ItauSourceLine[], ctx: ParserContext): number | null {
+  if (typeof ctx.expectedTotalCurrentCharges === 'number') {
+    return ctx.expectedTotalCurrentCharges;
   }
 
-  return rebuilt;
+  for (const source of sourceLines) {
+    const match = cleanItauNoisePrefix(source.text).match(ITAU_TOTAL_CURRENT_CHARGES);
+    if (match) return parseBrazilianCurrency(match[1]);
+  }
+
+  return null;
+}
+
+function appendRebuiltTransaction(
+  rebuilt: string,
+  source: ItauSourceLine,
+  ctx: ParserContext,
+  items: ParsedStatementItem[],
+  rebuiltLines: string[],
+  diagnostics: ItauParsingDiagnostics,
+  registerFailure: (source: ItauSourceLine, reason: string) => void,
+) {
+  const segments = splitByEmbeddedDates(rebuilt);
+  for (const segment of segments) {
+    if (hasMultipleTransactionDates(segment)) {
+      registerFailure(source, 'Linha ainda contém múltiplas datas após split');
+      continue;
+    }
+
+    const item = extractItauTransactionParts(segment, {
+      ...ctx,
+      statementDate: ctx.statementDate,
+      dueDate: ctx.dueDate,
+    });
+
+    if (!item) {
+      diagnostics.ignoredDateLines.push({
+        line: segment,
+        pageNumber: source.pageNumber,
+        columnIndex: source.columnIndex,
+        reason: 'Linha com DD/MM rejeitada no parser final',
+      });
+      continue;
+    }
+
+    items.push(item);
+    rebuiltLines.push(segment);
+  }
+}
+
+function parseStructuredItauLines(
+  sourceLines: ItauSourceLine[],
+  ctx: ParserContext,
+  options?: { requireSectionHeader?: boolean },
+): ItauParseResult {
+  const rebuiltLines: string[] = [];
+  const items: ParsedStatementItem[] = [];
+  const diagnostics: ItauParsingDiagnostics = {
+    capturedTransactions: 0,
+    capturedSum: 0,
+    expectedTotal: null,
+    difference: null,
+    ignoredDateLines: [],
+    orphanAmountLines: [],
+    failures: [],
+  };
+
+  let currentCardLast4: string | null = null;
+  let stopped = false;
+  const pendingAmountBlocks: Array<{ blockLines: string[]; source: ItauSourceLine }> = [];
+
+  const registerFailure = (source: ItauSourceLine, reason: string) => {
+    diagnostics.failures.push({
+      line: source.text,
+      pageNumber: source.pageNumber,
+      columnIndex: source.columnIndex,
+      reason,
+    });
+  };
+
+  const groupedByColumn = new Map<string, ItauSourceLine[]>();
+  for (const source of sourceLines) {
+    const key = `${source.pageNumber}:${source.columnIndex}`;
+    const group = groupedByColumn.get(key) ?? [];
+    group.push(source);
+    groupedByColumn.set(key, group);
+  }
+
+  for (const [, lines] of groupedByColumn) {
+    let startedAtSection = !(options?.requireSectionHeader ?? false);
+    let pendingLeadingFragments: string[] = [];
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const source = lines[index];
+      const line = source.text;
+      if (!line) continue;
+      const last4 = extractCardLast4(line);
+      if (last4) currentCardLast4 = last4;
+
+      if (isItauTransactionSectionHeader(line)) {
+        startedAtSection = true;
+        continue;
+      }
+
+      if (!startedAtSection) continue;
+
+      if (isItauFutureInstallmentSectionStart(line)) {
+        stopped = true;
+        break;
+      }
+
+      if (isItauIofRepasseLine(line)) {
+        const item = createIofItem(line, ctx, currentCardLast4);
+        if (item) {
+          items.push(item);
+          rebuiltLines.push(line);
+        }
+        continue;
+      }
+
+      if (isAmountOnlyLine(line)) {
+        if (pendingAmountBlocks.length > 0) {
+          const pending = pendingAmountBlocks.shift();
+          if (pending) {
+            const rebuiltPending = buildTransactionLine([...pending.blockLines, line]);
+            if (rebuiltPending) {
+              appendRebuiltTransaction(
+                rebuiltPending,
+                pending.source,
+                ctx,
+                items,
+                rebuiltLines,
+                diagnostics,
+                registerFailure,
+              );
+              continue;
+            }
+          }
+        }
+
+        diagnostics.orphanAmountLines.push({
+          line,
+          pageNumber: source.pageNumber,
+          columnIndex: source.columnIndex,
+          reason: 'Valor monetário sem transação associada',
+        });
+        continue;
+      }
+
+      if (!ITAU_DATE_START.test(line)) {
+        if (!isIgnorableItauLine(line) && !isItauFutureSectionSoftStop(line)) {
+          if (pendingAmountBlocks.length === 0) {
+            pendingLeadingFragments.push(line);
+          }
+        }
+        continue;
+      }
+
+      const blockLines = [line, ...pendingLeadingFragments];
+      pendingLeadingFragments = [];
+      let cursor = index + 1;
+
+      while (cursor < lines.length) {
+        const nextLine = lines[cursor].text;
+        if (!nextLine) {
+          cursor += 1;
+          continue;
+        }
+        if (isItauFutureInstallmentSectionStart(nextLine)) break;
+        if (isItauTransactionSectionHeader(nextLine)) break;
+        const nextIsInstallmentFragment =
+          isInstallmentOnlyLine(nextLine) &&
+          !blockHasAmount(blockLines) &&
+          blockHasDescriptionContent(blockLines);
+        if (ITAU_DATE_START.test(nextLine) && !nextIsInstallmentFragment) break;
+        if (isItauIofRepasseLine(nextLine)) break;
+        if (isItauCardSummaryLine(nextLine) || isItauCardholderLine(nextLine)) break;
+        if (isIgnorableItauLine(nextLine) || isItauFutureSectionSoftStop(nextLine)) {
+          cursor += 1;
+          continue;
+        }
+        if (
+          isAmountOnlyLine(nextLine) &&
+          pendingAmountBlocks.length > 0
+        ) {
+          break;
+        }
+        if (blockHasAmount(blockLines)) {
+          break;
+        }
+
+        blockLines.push(nextLine);
+        cursor += 1;
+        if (isAmountOnlyLine(nextLine) || ITAU_AMOUNT_AT_END.test(nextLine)) break;
+      }
+
+      index = cursor - 1;
+
+      const rebuilt = buildTransactionLine(blockLines);
+      if (!rebuilt) {
+        if (blockHasDescriptionContent(blockLines)) {
+          pendingAmountBlocks.push({ blockLines: [...blockLines], source });
+          continue;
+        }
+
+        diagnostics.ignoredDateLines.push({
+          line,
+          pageNumber: source.pageNumber,
+          columnIndex: source.columnIndex,
+          reason: 'Linha com DD/MM não pôde ser reconstruída',
+        });
+        continue;
+      }
+
+      appendRebuiltTransaction(rebuilt, source, ctx, items, rebuiltLines, diagnostics, registerFailure);
+    }
+
+    if (stopped) break;
+  }
+
+  diagnostics.capturedTransactions = items.length;
+  diagnostics.capturedSum = Number(items.reduce((sum, item) => sum + item.valor, 0).toFixed(2));
+  diagnostics.expectedTotal = findExpectedTotal(sourceLines, ctx);
+  diagnostics.difference = diagnostics.expectedTotal === null
+    ? null
+    : Number((diagnostics.expectedTotal - diagnostics.capturedSum).toFixed(2));
+
+  if (diagnostics.difference !== null && diagnostics.difference !== 0) {
+    console.warn('[itau-parser] divergence detected', {
+      capturedTransactions: diagnostics.capturedTransactions,
+      capturedSum: diagnostics.capturedSum,
+      expectedTotal: diagnostics.expectedTotal,
+      difference: diagnostics.difference,
+      ignoredDateLines: diagnostics.ignoredDateLines,
+      orphanAmountLines: diagnostics.orphanAmountLines,
+      failures: diagnostics.failures,
+    });
+  }
+
+  return { items, diagnostics, rebuiltLines };
 }
 
 export function preprocessItauText(text: string): string[] {
-  const sourceLines = text
-    .split('\n')
-    .map((line) => cleanItauNoisePrefix(line))
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-
-  const cleanedLines: string[] = [];
-  let stoppedAt: string | null = null;
-  let startedAtSection = false;
-
-  for (const line of sourceLines) {
-    if (isItauTransactionSectionHeader(line)) {
-      startedAtSection = true;
-      continue;
-    }
-
-    if (!startedAtSection) continue;
-
-    if (isItauFutureInstallmentSectionStart(line)) {
-      stoppedAt = line;
-      break;
-    }
-    if (isItauFutureSectionSoftStop(line)) continue;
-    if (isIgnorableItauLine(line)) continue;
-    cleanedLines.push(line);
-  }
-
-  const rebuilt = rebuildItauTransactionBlocks(cleanedLines);
-
-  // Visible in browser DevTools (Console → Verbose) and Node debug output.
-  console.debug(
-    '[itau-parser] source=%d  after-filter=%d  after-rebuild=%d  stopped-at=%s',
-    sourceLines.length,
-    cleanedLines.length,
-    rebuilt.length,
-    stoppedAt ?? 'none',
-  );
-  // Show a sample of cleaned lines so the format that reaches rebuild is visible.
-  console.debug('[itau-parser] sample cleaned lines (first 40):', cleanedLines.slice(0, 40));
-
-  return rebuilt;
+  return parseStructuredItauLines(
+    buildTextSourceLines(text),
+    { competencia: '2026-01' },
+    { requireSectionHeader: true },
+  ).rebuiltLines;
 }
-
-// ── Debug / diagnostics ──────────────────────────────────────────────────────
 
 export type ItauLineClassification =
   | 'transaction'
@@ -501,7 +695,7 @@ export function classifyItauLine(line: string): ItauLineClassification {
   if (isItauInternationalMetadataLine(cleaned)) return 'international-metadata';
   if (isAmountOnlyLine(cleaned)) return 'amount-only';
   if (isInstallmentOnlyLine(cleaned)) return 'date-only';
-  if (isItauTransactionLine(cleaned)) return 'transaction';
+  if (isItauTransactionLine(cleaned) || isItauIofRepasseLine(cleaned)) return 'transaction';
   if (ITAU_DATE_START.test(cleaned)) return 'partial-transaction';
   return 'unknown';
 }
@@ -515,17 +709,14 @@ export interface ItauDebugResult {
   preprocessedLines: string[];
   finalTransactions: number;
   parsedItems: ParsedStatementItem[];
+  diagnostics: ItauParsingDiagnostics;
 }
 
 export function debugItauParsing(text: string, ctx?: ParserContext): ItauDebugResult {
-  const sourceLines = text
-    .split('\n')
-    .map((line) => cleanItauNoisePrefix(line).replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-
+  const sourceLines = buildTextSourceLines(text);
   const classifications = sourceLines.map((line) => ({
-    line,
-    classification: classifyItauLine(line),
+    line: line.text,
+    classification: classifyItauLine(line.text),
   }));
 
   const classificationCounts = classifications.reduce<Partial<Record<ItauLineClassification, number>>>(
@@ -536,29 +727,53 @@ export function debugItauParsing(text: string, ctx?: ParserContext): ItauDebugRe
     {},
   );
 
-  const preprocessed = preprocessItauText(text);
-  const finalItems = ctx
-    ? parseItauStatement(preprocessed, ctx)
-    : parseItauStatement(preprocessed, { competencia: '2026-01' });
+  const parsed = parseStructuredItauLines(
+    sourceLines,
+    ctx ?? { competencia: '2026-01' },
+    { requireSectionHeader: true },
+  );
 
   return {
     totalSourceLines: sourceLines.length,
-    sourceLines,
+    sourceLines: sourceLines.map((line) => line.text),
     classificationCounts,
     classifications,
-    afterPreprocessLines: preprocessed.length,
-    preprocessedLines: preprocessed,
-    finalTransactions: finalItems.length,
-    parsedItems: finalItems,
+    afterPreprocessLines: parsed.rebuiltLines.length,
+    preprocessedLines: parsed.rebuiltLines,
+    finalTransactions: parsed.items.length,
+    parsedItems: parsed.items,
+    diagnostics: parsed.diagnostics,
   };
+}
+
+export function parseItauDocument(
+  document: PdfExtractedDocument,
+  ctx: ParserContext,
+): ItauParseResult {
+  return parseStructuredItauLines(buildLayoutSourceLines(document), ctx);
 }
 
 export function parseItauStatement(
   textOrLines: string | string[],
   ctx: ParserContext,
 ): ParsedStatementItem[] {
-  const lines = Array.isArray(textOrLines) ? textOrLines : preprocessItauText(textOrLines);
-  return lines
-    .map((line) => extractItauTransactionParts(line, ctx))
-    .filter((item): item is ParsedStatementItem => item !== null);
+  if (Array.isArray(textOrLines)) {
+    return parseStructuredItauLines(
+      textOrLines.map((line, index) => ({
+        text: cleanItauNoisePrefix(line),
+        pageNumber: 1,
+        columnIndex: 0,
+        y: 1000 - index,
+        index,
+      })),
+      ctx,
+      { requireSectionHeader: false },
+    ).items;
+  }
+
+  return parseStructuredItauLines(
+    buildTextSourceLines(textOrLines),
+    ctx,
+    { requireSectionHeader: true },
+  ).items;
 }

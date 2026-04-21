@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { extractTextFromPdf } from './pdf-text';
+import { extractPdfText } from './pdf-text';
 import { normalizeStatementDescription, startsWithUsefulPrefix, tokenizeNormalizedDescription } from './normalization';
 import { ItauParser } from './parsers/itau-parser';
 import { SicoobParser } from './parsers/sicoob-parser';
@@ -116,7 +116,8 @@ export async function importInvoicePdfPreview(params: {
   competencia: string;
   file: File;
 }): Promise<{ banco: SupportedBank; textoExtraido: string; itens: ImportedInvoiceItem[] }> {
-  const textoExtraido = await extractTextFromPdf(params.file);
+  const extracted = await extractPdfText(params.file);
+  const textoExtraido = extracted.text;
   if (!textoExtraido) {
     throw new Error('Não foi possível ler o conteúdo do PDF. Verifique se o arquivo possui texto selecionável.');
   }
@@ -126,7 +127,10 @@ export async function importInvoicePdfPreview(params: {
     throw new Error('Ainda não reconhecemos o layout desta fatura. No momento suportamos Itaú e Sicoob.');
   }
 
-  const parsedItems = parseStatementText(textoExtraido, { competencia: params.competencia });
+  const parsedItems = parseStatementText(textoExtraido, {
+    competencia: params.competencia,
+    pdfLayout: extracted,
+  });
   if (parsedItems.length === 0) {
     throw new Error('Nenhum lançamento válido foi encontrado nesta fatura.');
   }

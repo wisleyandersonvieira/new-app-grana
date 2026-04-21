@@ -32,6 +32,26 @@ export type ImportedInvoiceItem = ParsedStatementItem & {
 
 export type ParserContext = {
   competencia: string;
+  pdfLayout?: {
+    text: string;
+    pages: Array<{
+      pageNumber: number;
+      width: number;
+      height: number;
+      columns: Array<{
+        columnIndex: number;
+        lines: Array<{
+          text: string;
+          pageNumber: number;
+          columnIndex: number;
+          y: number;
+        }>;
+      }>;
+    }>;
+  };
+  expectedTotalCurrentCharges?: number | null;
+  statementDate?: string | null;
+  dueDate?: string | null;
 };
 
 export interface StatementParser {

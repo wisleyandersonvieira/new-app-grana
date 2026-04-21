@@ -6,6 +6,30 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 type TextToken = { x: number; y: number; str: string; width: number };
+export type PdfTextToken = TextToken & { pageNumber: number };
+export type PdfTextLine = {
+  text: string;
+  tokens: PdfTextToken[];
+  pageNumber: number;
+  columnIndex: number;
+  y: number;
+};
+export type PdfTextColumn = {
+  columnIndex: number;
+  lines: PdfTextLine[];
+  tokens: PdfTextToken[];
+};
+export type PdfPageLayout = {
+  pageNumber: number;
+  width: number;
+  height: number;
+  columns: PdfTextColumn[];
+  tokens: PdfTextToken[];
+};
+export type PdfExtractedDocument = {
+  text: string;
+  pages: PdfPageLayout[];
+};
 const ROW_Y_TOLERANCE = 3;
 
 function isAmountLikeToken(value: string): boolean {
@@ -149,17 +173,44 @@ function tokensToLines(tokens: TextToken[]): string[] {
   });
 }
 
-export async function extractTextFromPdf(file: File): Promise<string> {
+function tokensToStructuredLines(tokens: PdfTextToken[], columnIndex: number): PdfTextLine[] {
+  if (tokens.length === 0) return [];
+
+  return groupTokensByVisualRows(tokens).map((lineTokens) => {
+    const ordered = [...lineTokens].sort((a, b) => a.x - b.x);
+    let text = '';
+
+    for (let index = 0; index < ordered.length; index += 1) {
+      if (index > 0) {
+        const previous = ordered[index - 1];
+        const current = ordered[index];
+        const gap = current.x - (previous.x + previous.width);
+        text += gap > 3 ? ' ' : '';
+      }
+      text += ordered[index].str;
+    }
+
+    return {
+      text: text.trim(),
+      tokens: ordered,
+      pageNumber: ordered[0].pageNumber,
+      columnIndex,
+      y: ordered[0].y,
+    };
+  }).filter((line) => line.text.length > 0);
+}
+
+export async function extractPdfText(file: File): Promise<PdfExtractedDocument> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const allLines: string[] = [];
+  const pages: PdfPageLayout[] = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const viewport = page.getViewport({ scale: 1 });
     const content = await page.getTextContent();
 
-    const tokens: TextToken[] = [];
+    const tokens: PdfTextToken[] = [];
     for (const item of content.items) {
       if (!('str' in item) || !item.str.trim()) continue;
       const castItem = item as { str: string; transform: number[]; width: number };
@@ -168,16 +219,37 @@ export async function extractTextFromPdf(file: File): Promise<string> {
         y: castItem.transform[5],
         str: castItem.str,
         width: castItem.width,
+        pageNumber: i,
       });
     }
 
-    // Split into columns if the page has a two-column layout
-    const columns = splitIntoColumns(tokens, viewport.width);
-    for (const colTokens of columns) {
-      const lines = tokensToLines(colTokens);
-      allLines.push(...lines);
-    }
+    const rawColumns = splitIntoColumns(tokens, viewport.width);
+    const columns = rawColumns.map((columnTokens, columnIndex) => ({
+      columnIndex,
+      tokens: columnTokens,
+      lines: tokensToStructuredLines(columnTokens, columnIndex),
+    }));
+
+    pages.push({
+      pageNumber: i,
+      width: viewport.width,
+      height: viewport.height,
+      columns,
+      tokens,
+    });
   }
 
-  return allLines.filter((l) => l.length > 0).join('\n');
+  const text = pages
+    .flatMap((page) => page.columns)
+    .flatMap((column) => column.lines)
+    .map((line) => line.text)
+    .filter((line) => line.length > 0)
+    .join('\n');
+
+  return { text, pages };
+}
+
+export async function extractTextFromPdf(file: File): Promise<string> {
+  const extracted = await extractPdfText(file);
+  return extracted.text;
 }
