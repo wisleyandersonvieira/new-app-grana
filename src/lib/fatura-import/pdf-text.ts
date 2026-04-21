@@ -36,13 +36,13 @@ function isAmountLikeToken(value: string): boolean {
   return /^-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/.test(value.trim());
 }
 
-function groupTokensByVisualRows(tokens: TextToken[]): TextToken[][] {
+function groupTokensByVisualRows<T extends TextToken>(tokens: T[]): T[][] {
   if (tokens.length === 0) return [];
 
   const sorted = [...tokens].sort((a, b) => b.y - a.y || a.x - b.x);
-  const rows: TextToken[][] = [];
+  const rows: T[][] = [];
 
-  let currentRow: TextToken[] = [sorted[0]];
+  let currentRow: T[] = [sorted[0]];
   let currentY = sorted[0].y;
 
   for (let index = 1; index < sorted.length; index += 1) {
@@ -66,7 +66,7 @@ function groupTokensByVisualRows(tokens: TextToken[]): TextToken[][] {
  * Detects the split by looking for a gap in X positions.
  * Exported for unit testing.
  */
-export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextToken[][] {
+export function splitIntoColumns<T extends TextToken>(tokens: T[], pageWidth: number): T[][] {
   if (tokens.length === 0) return [[]];
 
   const midpoint = pageWidth / 2;
@@ -134,8 +134,8 @@ export function splitIntoColumns(tokens: TextToken[], pageWidth: number): TextTo
 
   // 3) Split each visual row into a left and/or right segment using the page midpoint.
   // This prevents rows from different columns but same Y from being merged together.
-  const leftTokens: TextToken[] = [];
-  const rightTokens: TextToken[] = [];
+  const leftTokens: T[] = [];
+  const rightTokens: T[] = [];
 
   for (const row of visualRows) {
     const leftRow = row.filter((token) => token.x + token.width / 2 < midpoint);
