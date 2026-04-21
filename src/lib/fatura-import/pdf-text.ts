@@ -108,8 +108,8 @@ export function splitIntoColumns<T extends TextToken>(tokens: T[], pageWidth: nu
       rightRowCount += 1;
     }
 
-    const leftTokensInRow = row.filter((t) => t.x + t.width / 2 < midpoint);
-    const rightTokensInRow = row.filter((t) => t.x + t.width / 2 >= midpoint);
+    const leftTokensInRow = row.filter((t) => t.x < midpoint);
+    const rightTokensInRow = row.filter((t) => t.x >= midpoint);
     if (leftTokensInRow.length >= 2) leftRichRows += 1;
     if (rightTokensInRow.length >= 2) rightRichRows += 1;
     if (leftTokensInRow.length > 0 && rightTokensInRow.length > 0) mixedRows += 1;
@@ -138,9 +138,8 @@ export function splitIntoColumns<T extends TextToken>(tokens: T[], pageWidth: nu
   const rightTokens: T[] = [];
 
   for (const row of visualRows) {
-    const leftRow = row.filter((token) => token.x + token.width / 2 < midpoint);
-    const rightRow = row.filter((token) => token.x + token.width / 2 >= midpoint);
-
+    const leftRow = row.filter((token) => token.x < midpoint);
+    const rightRow = row.filter((token) => token.x >= midpoint);
     if (leftRow.length > 0) leftTokens.push(...leftRow);
     if (rightRow.length > 0) rightTokens.push(...rightRow);
   }

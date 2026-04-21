@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { extractTextFromPdf } from '@/lib/fatura-import/pdf-text';
+import { extractPdfText } from '@/lib/fatura-import/pdf-text';
 import { identifyBankFromText, parseStatementText } from '@/lib/fatura-import/service';
 import { debugItauParsing, type ItauDebugResult } from '@/lib/fatura-import/parsers/itau-helpers';
 import type { ParsedStatementItem, SupportedBank } from '@/lib/fatura-import/types';
@@ -56,9 +56,10 @@ export default function DiagnosticoImportacaoFatura() {
 
     setLoading(true);
     try {
-      const extractedText = await extractTextFromPdf(file);
+      const extracted = await extractPdfText(file);
+      const extractedText = extracted.text;
       const bank = identifyBankFromText(extractedText);
-      const parsedItems = bank ? parseStatementText(extractedText, { competencia }) : [];
+      const parsedItems = bank ? parseStatementText(extractedText, { competencia, pdfLayout: extracted }) : [];
       const itauDebug = bank === 'itau' ? debugItauParsing(extractedText, { competencia }) : null;
 
       setResult({
