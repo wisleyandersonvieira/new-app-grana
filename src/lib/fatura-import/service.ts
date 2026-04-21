@@ -115,6 +115,7 @@ export async function importInvoicePdfPreview(params: {
   cartaoId: string;
   competencia: string;
   file: File;
+  banco: SupportedBank;
 }): Promise<{ banco: SupportedBank; textoExtraido: string; itens: ImportedInvoiceItem[] }> {
   const extracted = await extractPdfText(params.file);
   const textoExtraido = extracted.text;
@@ -122,10 +123,7 @@ export async function importInvoicePdfPreview(params: {
     throw new Error('Não foi possível ler o conteúdo do PDF. Verifique se o arquivo possui texto selecionável.');
   }
 
-  const banco = identifyBankFromText(textoExtraido);
-  if (!banco) {
-    throw new Error('Ainda não reconhecemos o layout desta fatura. No momento suportamos Itaú e Sicoob.');
-  }
+  const banco = params.banco;
 
   const parsedItems = parseStatementText(textoExtraido, {
     competencia: params.competencia,

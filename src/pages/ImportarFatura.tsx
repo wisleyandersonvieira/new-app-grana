@@ -52,6 +52,7 @@ export default function ImportarFatura() {
   const [categorias, setCategorias] = useState<CategoriaOption[]>([]);
   const [subcategorias, setSubcategorias] = useState<SubcategoriaOption[]>([]);
   const [cartaoId, setCartaoId] = useState('');
+  const [banco, setBanco] = useState<SupportedBank | ''>('');
   const [vencimento, setVencimento] = useState('');
   const [mes, setMes] = useState(String(new Date().getMonth() + 1));
   const [ano, setAno] = useState(String(new Date().getFullYear()));
@@ -209,7 +210,7 @@ export default function ImportarFatura() {
   };
 
   const validateImportInputs = () => {
-    if (!user || !cartaoId || !vencimento || !competencia || !file) {
+    if (!user || !cartaoId || !banco || !vencimento || !competencia || !file) {
       toast.error('Preencha todos os campos obrigatórios.');
       return false;
     }
@@ -254,6 +255,7 @@ export default function ImportarFatura() {
         cartaoId,
         competencia,
         file,
+        banco: banco as SupportedBank,
       });
 
       setPreviewState({
@@ -425,6 +427,17 @@ export default function ImportarFatura() {
                 </div>
 
                 <div className="space-y-1">
+                  <label className="text-sm font-medium">Banco *</label>
+                  <Select value={banco} onValueChange={(v) => setBanco(v as SupportedBank)}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o banco" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="itau">Itaú</SelectItem>
+                      <SelectItem value="sicoob">Sicoob</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
                   <label className="text-sm font-medium">Vencimento *</label>
                   <Input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
                 </div>
@@ -521,8 +534,8 @@ export default function ImportarFatura() {
 
                 <div className="space-y-3 text-sm text-muted-foreground">
                   <div className="flex items-center justify-between rounded-xl border border-border/60 px-4 py-3">
-                    <span>Banco identificado automaticamente</span>
-                    <span className="font-medium text-foreground">Sim</span>
+                    <span>Banco selecionado</span>
+                    <span className="font-medium text-foreground">{banco ? (banco === 'itau' ? 'Itaú' : 'Sicoob') : '—'}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-xl border border-border/60 px-4 py-3">
                     <span>Prévia dos lançamentos antes de salvar</span>
