@@ -1,7 +1,7 @@
 import { BaseStatementParser } from './base-parser';
 import type { ParsedStatementItem, ParserContext } from '../types';
 import { parseItauStatement } from './itau-helpers';
-import { parseItauDocumentV2 } from './itau-parser-v2';
+import { parseItauMonthlyDocument } from './itau-parser-mensal';
 import { stripAccents } from '../normalization';
 
 export class ItauParser extends BaseStatementParser {
@@ -17,7 +17,7 @@ export class ItauParser extends BaseStatementParser {
 
   parse(text: string, context: ParserContext): ParsedStatementItem[] {
     if (context.pdfLayout) {
-      return parseItauDocumentV2(context.pdfLayout, context);
+      return parseItauMonthlyDocument(context.pdfLayout, context).items;
     }
     return parseItauStatement(text, context);
   }

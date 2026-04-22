@@ -570,30 +570,154 @@ describe('Itaú parser estruturado por página/coluna/linha', () => {
     expectedTotalCurrentCharges: 19107.25,
   };
 
-  function buildStructuredItauDoc(leftRows: string[], rightRows: string[]): PdfExtractedDocument {
-    const buildColumn = (rows: string[], columnIndex: number) => ({
-      columnIndex,
-      tokens: [],
-      lines: rows.map((text, index) => ({
-        text,
-        tokens: [],
-        pageNumber: 1,
-        columnIndex,
-        y: 800 - index * 12,
-      })),
+  function buildStructuredItauDoc(
+    pagesInput: Array<{ leftRows: string[]; rightRows: string[] }>,
+  ): PdfExtractedDocument {
+    const pageWidth = 595;
+    const pageHeight = 842;
+    const baseXByColumn = { 0: 36, 1: 322 } as const;
+    const amountXByColumn = { 0: 250, 1: 535 } as const;
+    const descXByColumn = { 0: 76, 1: 362 } as const;
+
+    const buildWordItems = (text: string, pageNumber: number, columnIndex: 0 | 1, y: number) => {
+      const items: Array<{ str: string; transform: number[]; pageNumber: number; width: number }> = [];
+      let x = baseXByColumn[columnIndex];
+      for (const word of text.split(/\s+/).filter(Boolean)) {
+        const width = Math.max(14, word.length * 5.2);
+        items.push({
+          str: word,
+          transform: [1, 0, 0, 1, x, y],
+          pageNumber,
+          width,
+        });
+        x += width + 5;
+      }
+      return items;
+    };
+
+    const buildRowItems = (text: string, pageNumber: number, columnIndex: 0 | 1, y: number) => {
+      const trimmed = text.trim();
+      const amountAtEnd = trimmed.match(/((?:R\$\s*)?-?\s*\d{1,3}(?:\.\d{3})*,\d{2}|-\s*\d{1,3}(?:\.\d{3})*,\d{2})$/);
+      const dateAtStart = trimmed.match(/^(\d{1,2}\/\d{2})(?:\s+(.*?))?(?:\s+((?:R\$\s*)?-?\s*\d{1,3}(?:\.\d{3})*,\d{2}|-\s*\d{1,3}(?:\.\d{3})*,\d{2}))?$/);
+
+      if (/^repasse de iof em r\$/i.test(trimmed) || /^total dos lancamentos atuais/i.test(trimmed)) {
+        const amount = trimmed.match(/(\d{1,3}(?:\.\d{3})*,\d{2})$/)?.[1];
+        const head = amount ? trimmed.slice(0, trimmed.length - amount.length).trim() : trimmed;
+        return [
+          {
+            str: head,
+            transform: [1, 0, 0, 1, descXByColumn[columnIndex], y],
+            pageNumber,
+            width: Math.max(40, head.length * 5.4),
+          },
+          ...(amount ? [{
+            str: amount,
+            transform: [1, 0, 0, 1, amountXByColumn[columnIndex], y],
+            pageNumber,
+            width: Math.max(20, amount.length * 5.2),
+          }] : []),
+        ];
+      }
+
+      if (dateAtStart && amountAtEnd) {
+        const date = dateAtStart[1];
+        const amount = amountAtEnd[1];
+        const body = trimmed
+          .slice(date.length, trimmed.length - amount.length)
+          .trim();
+
+        return [
+          {
+            str: date,
+            transform: [1, 0, 0, 1, baseXByColumn[columnIndex], y],
+            pageNumber,
+            width: 28,
+          },
+          ...(body ? [{
+            str: body,
+            transform: [1, 0, 0, 1, descXByColumn[columnIndex], y],
+            pageNumber,
+            width: Math.max(40, body.length * 5.2),
+          }] : []),
+          {
+            str: amount,
+            transform: [1, 0, 0, 1, amountXByColumn[columnIndex], y],
+            pageNumber,
+            width: Math.max(20, amount.length * 5.2),
+          },
+        ];
+      }
+
+      if (/^(?:R\$\s*)?-?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-\s*\d{1,3}(?:\.\d{3})*,\d{2}$/.test(trimmed)) {
+        return [{
+          str: trimmed,
+          transform: [1, 0, 0, 1, amountXByColumn[columnIndex], y],
+          pageNumber,
+          width: Math.max(20, trimmed.length * 5.2),
+        }];
+      }
+
+      return buildWordItems(trimmed, pageNumber, columnIndex, y);
+    };
+
+    const pages = pagesInput.map((pageInput, pageIndex) => {
+      const pageNumber = pageIndex + 1;
+      const buildColumn = (rows: string[], columnIndex: 0 | 1) => {
+        const lines = rows.map((text, index) => {
+          const y = 800 - index * 14;
+          const items = buildRowItems(text, pageNumber, columnIndex, y);
+          return {
+            text,
+            tokens: items.map((item) => ({
+              x: item.transform[4],
+              y: item.transform[5],
+              str: item.str,
+              width: item.width,
+              pageNumber: item.pageNumber,
+              transform: item.transform,
+            })),
+            pageNumber,
+            columnIndex,
+            y,
+            xMin: Math.min(...items.map((item) => item.transform[4])),
+            xMax: Math.max(...items.map((item) => item.transform[4] + item.width)),
+          };
+        });
+
+        return { columnIndex, tokens: lines.flatMap((line) => line.tokens), lines };
+      };
+
+      const leftColumn = buildColumn(pageInput.leftRows, 0);
+      const rightColumn = buildColumn(pageInput.rightRows, 1);
+      const pageTextItems = [
+        ...rightColumn.lines.slice().reverse().flatMap((line) => line.tokens.slice().reverse().map((token) => ({
+          str: token.str,
+          transform: token.transform,
+          pageNumber: token.pageNumber,
+          width: token.width,
+        }))),
+        ...leftColumn.lines.slice().reverse().flatMap((line) => line.tokens.slice().reverse().map((token) => ({
+          str: token.str,
+          transform: token.transform,
+          pageNumber: token.pageNumber,
+          width: token.width,
+        }))),
+      ];
+
+      return {
+        pageNumber,
+        width: pageWidth,
+        height: pageHeight,
+        tokens: [...leftColumn.tokens, ...rightColumn.tokens],
+        textItems: pageTextItems,
+        columns: [leftColumn, rightColumn],
+      };
     });
 
     return {
-      text: [...leftRows, ...rightRows].join('\n'),
-      pages: [
-        {
-          pageNumber: 1,
-          width: 595,
-          height: 842,
-          tokens: [],
-          columns: [buildColumn(leftRows, 0), buildColumn(rightRows, 1)],
-        },
-      ],
+      text: pagesInput.flatMap((page) => [...page.leftRows, ...page.rightRows]).join('\n'),
+      pages,
+      textItems: pages.flatMap((page) => page.textItems),
     };
   }
 
@@ -615,64 +739,96 @@ describe('Itaú parser estruturado por página/coluna/linha', () => {
     expect(items.find((item) => item.descricao_original === 'ARENA TENNISTORM')?.valor).toBe(435);
   });
 
-  it('parseia a fatura Itaú em duas colunas com total, IOF e diagnóstico zerado', () => {
-    const namedTransactions = [
-      '22/08 VIVARA MOR 08/10 930,15',
-      '03/03 ARENA TENNISTORM 435,00',
-      '03/03 CAFE MINEIRO PANIFICAD 346,00',
-      '18/03 NETFLIX ENTRETENIMENTO 59,90',
-      '20/03 SUPABASE 343,84',
-      '04/03 ANUIDADE DIFERENCI07/12 105,00',
-      '03/04 ESTORNO DE ANUIDADE DIF - 52,50',
-    ];
-
+  it('parseia a fatura Itaú por textItems crus, respeita seções e bate o total final', () => {
     const fillerValues = [
-      ...Array.from({ length: 75 }, () => 200),
-      1767.53,
+      ...Array.from({ length: 63 }, () => 100),
+      644.76,
     ];
     const fillerTransactions = fillerValues.map((value, index) => {
       const day = String((index % 28) + 1).padStart(2, '0');
-      const month = String((index % 3) + 1).padStart(2, '0');
-      return `${day}/${month} ESTABELECIMENTO TESTE ${String(index + 1).padStart(2, '0')} ${value.toLocaleString('pt-BR', {
+      const month = String(((index % 3) + 1)).padStart(2, '0');
+      return `${day}/${month} FILLER MERCHANT ${String(index + 1).padStart(2, '0')} ${value.toLocaleString('pt-BR', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })}`;
     });
 
-    const leftRows = [
+    const page1LeftRows = [
       'Banco Itaú S.A.',
       'Resumo da fatura em R$',
+      'JESSICA R S VIEIRA (final 8275)',
       'Lançamentos: compras e saques',
       'DATA ESTABELECIMENTO VALOR EM R$',
-      'Lançamentos no cartão (final 8275) 11.096,14',
-      namedTransactions[0],
-      'DIVERSOS .SAO PAULO',
-      namedTransactions[2],
-      'ALIMENTAÇÃO .MARINGA',
-      namedTransactions[5],
-      namedTransactions[6],
-      ...fillerTransactions.slice(0, 39),
-    ];
-
-    const rightRows = [
-      'Lançamentos: compras e saques',
-      'DATA ESTABELECIMENTO VALOR EM R$',
-      'Lançamentos no cartão (final 9286) 8.011,11',
-      namedTransactions[1],
-      namedTransactions[3],
-      namedTransactions[4],
-      '18/03 UI BAKERY INC. 66,36',
-      'AUSTIN 12,00 USD 12,00',
-      'Dólar de Conversão R$ 5,53',
-      ...fillerTransactions.slice(39),
+      '22/08 VIVARA MOR 08/10 930,15',
+      '28/08 LATAM AIR 08/08 1.765,52',
+      '02/03 AV SAO PAULO-CT 02/02 269,88',
+      '02/03 AV SAO PAULO-CT - 0,01',
+      '08/03 CAFE MINEIRO PANIFICAD 346,00',
+      '15/03 JOAO PAULINO-CT 947,13',
+      ...fillerTransactions.slice(0, 15),
+      'Lançamentos internacionais',
+      '03/03 AMAZON MKTPL*BE8ZQ41X1 494,54',
+      'SEATTLE 87,53 USD 87,53',
+      'Dólar de Conversão R$ 5,65',
+      '06/03 ADIDAS US ONLINE STORE 897,80',
+      'PORTLAND 159,75 USD 159,75',
+      ...fillerTransactions.slice(15, 23),
       'Repasse de IOF em R$ 80,83',
-      'Repasse de IOF em R$ 25,14',
-      'Total dos lançamentos atuais R$ 19.107,25',
-      'Compras parceladas - próximas faturas',
-      '27/09 CLUBE LIVELO*Clube08/12 24,90',
+      'Total lançamentos inter. em R$ 1.472,17',
     ];
 
-    const parsed = parseItauDocument(buildStructuredItauDoc(leftRows, rightRows), CTX);
+    const page1RightRows = [
+      'WISLEY VIEIRA (final 9286)',
+      'Lançamentos: compras e saques',
+      'DATA ESTABELECIMENTO VALOR EM R$',
+      '03/03 ARENA TENNISTORM 435,00',
+      '10/03 RAFT UNIFORM-CT 01/02 192,00',
+      '12/03 TRIUNFO BRIN-CT OS01/03 316,66',
+      '18/03 NETFLIX ENTRETENIMENTO 59,90',
+      '27/09 CLUBE LIVELO*Clube07/12 24,90',
+      ...fillerTransactions.slice(23, 38),
+      'Lançamentos internacionais',
+      '11/03 APPLY ESTA 728,84',
+      'DOVER 160,50 BRL 30,61',
+      '29/03 SUPABASE 343,84',
+      '29/03 LOVABLE 139,50',
+      'Dólar de Conversão R$ 5,58',
+      ...fillerTransactions.slice(38, 46),
+      'Repasse de IOF em R$ 25,14',
+      'Total transações inter. em R$ 1.212,18',
+    ];
+
+    const page2LeftRows = [
+      'JESSICA R S VIEIRA (final 1808)',
+      'Lançamentos: compras e saques',
+      'DATA ESTABELECIMENTO VALOR EM R$',
+      '28/08 LATAM AIR 08/08 1.466,50',
+      '12/11 SEBRAE PR 05/12 2.645,87',
+      ...fillerTransactions.slice(46, 56),
+      'Lançamentos: produtos e serviços',
+      '04/03 ANUIDADE DIFERENCI07/12 105,00',
+      '03/04 ESTORNO DE ANUIDADE DIF - 52,50',
+    ];
+
+    const page2RightRows = [
+      'Lançamentos: compras e saques',
+      'DATA ESTABELECIMENTO VALOR EM R$',
+      ...fillerTransactions.slice(56, 64),
+      'Total dos lançamentos atuais 19.107,25',
+      'Compras parceladas - próximas faturas',
+      '22/08 VIVARA MOR 09/10 930,15',
+      '27/09 CLUBE LIVELO*Clube08/12 24,90',
+      '12/11 SEBRAE PR 06/12 2.645,87',
+      '24/02 JUREMA AGUAS QUENT03/03 354,01',
+      '04/03 ANUIDADE DIFERENCI08/12 105,00',
+      '10/03 RAFT UNIFORM-CT 02/02 192,00',
+      '12/03 TRIUNFO BRIN-CT OS02/03 316,66',
+    ];
+
+    const parsed = parseItauDocument(buildStructuredItauDoc([
+      { leftRows: page1LeftRows, rightRows: page1RightRows },
+      { leftRows: page2LeftRows, rightRows: page2RightRows },
+    ]), CTX);
 
     expect(parsed.items).toHaveLength(86);
     expect(parsed.diagnostics.capturedTransactions).toBe(86);
@@ -683,14 +839,38 @@ describe('Itaú parser estruturado por página/coluna/linha', () => {
     expect(parsed.diagnostics.orphanAmountLines).toEqual([]);
 
     expect(parsed.items.find((item) => item.descricao_original === 'VIVARA MOR 08/10')?.valor).toBe(930.15);
+    expect(parsed.items.find((item) => item.descricao_original === 'LATAM AIR 08/08' && item.valor === 1765.52)).toBeDefined();
+    expect(parsed.items.find((item) => item.descricao_original === 'AV SAO PAULO-CT 02/02')?.valor).toBe(269.88);
+    expect(parsed.items.find((item) => item.descricao_original === 'AV SAO PAULO-CT' && item.valor === -0.01)).toBeDefined();
     expect(parsed.items.find((item) => item.descricao_original === 'ARENA TENNISTORM')?.valor).toBe(435);
     expect(parsed.items.find((item) => item.descricao_original === 'CAFE MINEIRO PANIFICAD')?.valor).toBe(346);
+    expect(parsed.items.find((item) => item.descricao_original === 'RAFT UNIFORM-CT 01/02')?.valor).toBe(192);
+    expect(parsed.items.find((item) => item.descricao_original === 'JOAO PAULINO-CT')?.valor).toBe(947.13);
+    expect(parsed.items.find((item) => item.descricao_original === 'TRIUNFO BRIN-CT OS01/03')?.valor).toBe(316.66);
     expect(parsed.items.find((item) => item.descricao_original === 'NETFLIX ENTRETENIMENTO')?.valor).toBe(59.9);
+    expect(parsed.items.find((item) => item.descricao_original === 'CLUBE LIVELO*Clube07/12')?.valor).toBe(24.9);
+    expect(parsed.items.find((item) => item.descricao_original === 'LATAM AIR 08/08' && item.valor === 1466.5)).toBeDefined();
+    expect(parsed.items.find((item) => item.descricao_original === 'SEBRAE PR 05/12')?.valor).toBe(2645.87);
+    expect(parsed.items.find((item) => item.descricao_original === 'AMAZON MKTPL*BE8ZQ41X1')?.valor).toBe(494.54);
+    expect(parsed.items.find((item) => item.descricao_original === 'ADIDAS US ONLINE STORE')?.valor).toBe(897.8);
+    expect(parsed.items.find((item) => item.descricao_original === 'APPLY ESTA')?.valor).toBe(728.84);
     expect(parsed.items.find((item) => item.descricao_original === 'SUPABASE')?.valor).toBe(343.84);
+    expect(parsed.items.find((item) => item.descricao_original === 'LOVABLE')?.valor).toBe(139.5);
     expect(parsed.items.find((item) => item.descricao_original === 'ANUIDADE DIFERENCI07/12')?.valor).toBe(105);
     expect(parsed.items.find((item) => item.descricao_original === 'ESTORNO DE ANUIDADE DIF')?.valor).toBe(-52.5);
-    expect(parsed.items.some((item) => item.descricao_original.includes('Compras parceladas'))).toBe(false);
-    expect(parsed.items.some((item) => item.descricao_original.includes('CLUBE LIVELO'))).toBe(false);
+    expect(parsed.items.find((item) => item.descricao_original === 'Repasse de IOF - Cartão final 8275')?.valor).toBe(80.83);
+    expect(parsed.items.find((item) => item.descricao_original === 'Repasse de IOF - Cartão final 9286')?.valor).toBe(25.14);
+
+    expect(parsed.items.some((item) => item.descricao_original === 'VIVARA MOR 09/10')).toBe(false);
+    expect(parsed.items.some((item) => item.descricao_original === 'CLUBE LIVELO*Clube08/12')).toBe(false);
+    expect(parsed.items.some((item) => item.descricao_original === 'SEBRAE PR 06/12')).toBe(false);
+    expect(parsed.items.some((item) => item.descricao_original === 'JUREMA AGUAS QUENT03/03')).toBe(false);
+    expect(parsed.items.some((item) => item.descricao_original === 'ANUIDADE DIFERENCI08/12')).toBe(false);
+    expect(parsed.items.some((item) => item.descricao_original === 'RAFT UNIFORM-CT 02/02')).toBe(false);
+    expect(parsed.items.some((item) => item.descricao_original === 'TRIUNFO BRIN-CT OS02/03')).toBe(false);
+
+    expect(parsed.diagnostics.itemsByPageColumnSection.length).toBeGreaterThan(0);
+    expect(parsed.diagnostics.importedItems.some((item) => item.section === 'international')).toBe(true);
   });
 });
 

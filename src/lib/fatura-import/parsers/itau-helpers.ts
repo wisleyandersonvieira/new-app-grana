@@ -7,6 +7,7 @@ import {
 } from '../normalization';
 import type { ParsedStatementItem, ParserContext } from '../types';
 import type { PdfExtractedDocument } from '../pdf-text';
+import { parseItauMonthlyDocument } from './itau-parser-mensal';
 
 const ITAU_DATE_START = /^\d{1,2}\/\d{2}(?!\/\d{2,4})\b/;
 const ITAU_DATE_ONLY = /^\d{1,2}\/\d{2}(?!\/\d{2,4})$/;
@@ -29,6 +30,23 @@ type ItauDiagnosticLine = {
   pageNumber: number;
   columnIndex: number;
   reason: string;
+  section?: string;
+};
+
+type ItauImportedSectionStat = {
+  pageNumber: number;
+  columnIndex: number;
+  section: string;
+  count: number;
+  total: number;
+};
+
+type ItauImportedItem = {
+  descricao_original: string;
+  valor: number;
+  pageNumber: number;
+  columnIndex: number;
+  section: string;
 };
 
 export interface ItauParsingDiagnostics {
@@ -39,6 +57,9 @@ export interface ItauParsingDiagnostics {
   ignoredDateLines: ItauDiagnosticLine[];
   orphanAmountLines: ItauDiagnosticLine[];
   failures: ItauDiagnosticLine[];
+  multipleDateLines: ItauDiagnosticLine[];
+  itemsByPageColumnSection: ItauImportedSectionStat[];
+  importedItems: ItauImportedItem[];
 }
 
 export interface ItauParseResult {
@@ -494,6 +515,9 @@ function parseStructuredItauLines(
     ignoredDateLines: [],
     orphanAmountLines: [],
     failures: [],
+    multipleDateLines: [],
+    itemsByPageColumnSection: [],
+    importedItems: [],
   };
 
   let currentCardLast4: string | null = null;
@@ -776,7 +800,7 @@ export function parseItauDocument(
   document: PdfExtractedDocument,
   ctx: ParserContext,
 ): ItauParseResult {
-  return parseStructuredItauLines(buildLayoutSourceLines(document), ctx);
+  return parseItauMonthlyDocument(document, ctx);
 }
 
 export function parseItauStatement(
