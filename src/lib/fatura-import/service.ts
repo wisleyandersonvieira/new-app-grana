@@ -125,7 +125,11 @@ export async function importInvoicePdfPreview(params: {
 
   const banco = params.banco;
 
-  const parsedItems = parseStatementText(textoExtraido, {
+  const parser = parsers.find((p) => p.bank === banco);
+  if (!parser) {
+    throw new Error(`Parser não encontrado para o banco: ${banco}`);
+  }
+  const parsedItems = parser.parse(textoExtraido, {
     competencia: params.competencia,
     pdfLayout: extracted,
   });

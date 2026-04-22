@@ -18,6 +18,7 @@ const NOISE_RE = [
   /^banco\s+ita/,
   /^resumo\s+da\s+fatura/,
   /^data\s+estabelecimento/,
+  /^data\s+produtos/,
   /^valor\s+em\s+r\$/,
   /^total\s+dos\s+lancamentos/,
   /^total\s+transacoes/,
@@ -27,7 +28,7 @@ const NOISE_RE = [
   /^encargos\s+cobrados/,
   /^limites\s+de\s+credito/,
   /^pagina\s+\d+/,
-  /^continua$/,
+  /^continua/,
   /^dolar\s+de\s+conversao/,
   /^pc\s*-\s*\d+/,
   /^uso\s+do\s+banco/,
@@ -43,6 +44,9 @@ const NOISE_RE = [
   /^ficha\s+de\s+compensacao/,
   /^central\s+de\s+atendimento/,
   /^previsao\s+do\s+proximo/,
+  /^lancamentos\s+no\s+cartao/,
+  // Card-holder name lines like "JESSICA R S VIEIRA (final 8275)" and "WISLEY VIEIRA (final 1112)"
+  /\(final\s+\d{4}\)\s*$/,
 ];
 
 function norm(text: string): string {
@@ -86,11 +90,8 @@ function extractSectionLines(lines: CleanLine[]): CleanLine[] {
     }
   }
 
-  if (result.length === 0) {
-    // No section header found — return all non-skippable lines as fallback
-    return lines.filter((l) => !isSkippableLine(l.text));
-  }
-
+  // If no section header was found (e.g. cover page, summary page), return nothing.
+  // Returning all lines as fallback causes false positives from non-transaction content.
   return result;
 }
 
@@ -117,8 +118,9 @@ function matchAmounts(
       }
     }
 
-    // 30pt tolerance covers both same-row amounts and adjacent-row amounts
-    if (bestIdx >= 0 && bestDist <= 30) {
+    // 25pt tolerance covers both same-row amounts and adjacent-row amounts
+    // (amount tokens in Itaú PDFs can be 3–8pt above their description tokens)
+    if (bestIdx >= 0 && bestDist <= 25) {
       used.add(bestIdx);
       const reconstructed = `${dateLine.text} ${amountLines[bestIdx].text}`;
       const item = extractItauTransactionParts(reconstructed, ctx);
@@ -135,6 +137,7 @@ function parseColumnLines(rawLines: PdfTextLine[], ctx: ParserContext): ParsedSt
     .filter((l) => l.text.length > 0);
 
   const sectionLines = extractSectionLines(cleaned);
+  if (sectionLines.length === 0) return [];
 
   const completeTxLines: CleanLine[] = [];
   const incompleteDateLines: CleanLine[] = [];
@@ -160,6 +163,14 @@ function parseColumnLines(rawLines: PdfTextLine[], ctx: ParserContext): ParsedSt
   }
 
   items.push(...matchAmounts(incompleteDateLines, amountOnlyLines, ctx));
+
+  // Handle IOF repasse and other valid non-date transaction lines
+  // (e.g. "Repasse de IOF em R$ 80,83" has no date prefix but IS a charge)
+  for (const line of sectionLines) {
+    if (DATE_START.test(line.text) || AMOUNT_ONLY.test(line.text)) continue;
+    const item = extractItauTransactionParts(line.text, ctx);
+    if (item) items.push(item);
+  }
 
   return items;
 }
