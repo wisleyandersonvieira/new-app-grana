@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { formatCurrency, formatCompetencia } from '@/lib/financial';
+import { resolveInvoiceStatus } from '@/lib/invoice-status';
 import { Badge } from '@/components/ui/badge';
 
 type FaturaRow = {
@@ -17,6 +18,7 @@ type FaturaRow = {
 type DespesaFaturaRow = {
   lote_id: string | null;
   paga: boolean | null;
+  data_pagamento: string | null;
 };
 
 export default function Faturas() {
@@ -30,18 +32,21 @@ export default function Faturas() {
     const [{ data: fats }, { data: contas }, { data: despesasFatura }] = await Promise.all([
       supabase.from('faturas_cartao').select('id, mes_ano, data_vencimento, valor_total, conta_id, status').eq('usuario_id', user.id).order('data_vencimento', { ascending: false }),
       supabase.from('contas').select('id, nome').eq('usuario_id', user.id),
-      supabase.from('despesas').select('lote_id, paga').eq('usuario_id', user.id).not('lote_id', 'is', null),
+      supabase.from('despesas').select('lote_id, paga, data_pagamento').eq('usuario_id', user.id).not('lote_id', 'is', null),
     ]);
     if (fats) {
-      const despesasPorFatura = (despesasFatura ?? []).reduce<Record<string, boolean>>((acc, despesa: DespesaFaturaRow) => {
-        if (despesa.lote_id) acc[despesa.lote_id] = Boolean(despesa.paga);
+      const despesasPorFatura = (despesasFatura ?? []).reduce<Record<string, DespesaFaturaRow[]>>((acc, despesa: DespesaFaturaRow) => {
+        if (despesa.lote_id) {
+          if (!acc[despesa.lote_id]) acc[despesa.lote_id] = [];
+          acc[despesa.lote_id].push(despesa);
+        }
         return acc;
-      }, {});
+      }, {} as Record<string, DespesaFaturaRow[]>);
 
       setFaturas(
         fats.map((fatura) => ({
           ...fatura,
-          status: despesasPorFatura[fatura.id] ? 'quitada' : 'aberta',
+          status: resolveInvoiceStatus(fatura.status, despesasPorFatura[fatura.id] ?? []),
         })),
       );
     }

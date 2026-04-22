@@ -7,6 +7,13 @@ import { Download } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
+import {
+  type ComparisonDateType,
+  getMonthDateRange,
+  getMonthKey,
+  getMonthsBetween,
+  resolveInvoiceItemMonth,
+} from '@/lib/comparativo-mensal';
 import { exportToPDF } from '@/lib/export';
 import {
   isCreditCardCategoryName,
@@ -28,7 +35,7 @@ type ItemFaturaReport = {
 export default function ComparativoMensal() {
   const { user } = useAuth();
   const currentYear = new Date().getFullYear();
-  const [tipoData, setTipoData] = useState('competencia');
+  const [tipoData, setTipoData] = useState<ComparisonDateType>('competencia');
   const [dataInicio, setDataInicio] = useState(`${currentYear}-01`);
   const [dataFim, setDataFim] = useState(`${currentYear}-12`);
   const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
@@ -43,24 +50,14 @@ export default function ComparativoMensal() {
       .then(({ data }) => { if (data) { setCategorias(data); setSelectedCats(data.map(c => c.id)); } });
   }, [user]);
 
-  const getMonthsBetween = (start: string, end: string) => {
-    const result: string[] = [];
-    const [sy, sm] = start.split('-').map(Number);
-    const [ey, em] = end.split('-').map(Number);
-    let y = sy, m = sm;
-    while (y < ey || (y === ey && m <= em)) {
-      result.push(`${y}-${String(m).padStart(2, '0')}`);
-      m++; if (m > 12) { m = 1; y++; }
-    }
-    return result;
-  };
-
-  const getMonthKey = (value: string | null | undefined) => value?.substring(0, 7) ?? null;
-
   const generate = async () => {
     if (!user || !dataInicio || !dataFim) return;
     await sanitizeCreditCardCategoryData(user.id);
     const mths = getMonthsBetween(dataInicio, dataFim);
+    const { start: inicioDia, end: fimDia } = {
+      start: getMonthDateRange(dataInicio).start,
+      end: getMonthDateRange(dataFim).end,
+    };
     setMonths(mths);
 
     const catMap: Record<string, string> = {};
@@ -74,13 +71,31 @@ export default function ComparativoMensal() {
 
     const data: Record<string, Record<string, number>> = {};
 
+    // Receitas
+    let rq = supabase
+      .from('receitas')
+      .select('categoria_id, valor, competencia, data_pagamento')
+      .eq('usuario_id', user.id);
+    if (tipoData === 'competencia') rq = rq.gte('competencia', dataInicio).lte('competencia', dataFim);
+    else rq = rq.gte('data_pagamento', inicioDia).lte('data_pagamento', fimDia);
+    if (selectedCats.length < categorias.length) rq = rq.in('categoria_id', selectedCats);
+    const { data: receitas } = await rq;
+
+    receitas?.forEach((r) => {
+      const catNome = r.categoria_id ? catMap[r.categoria_id] ?? 'Sem' : 'Sem';
+      const month = tipoData === 'competencia' ? getMonthKey(r.competencia) : getMonthKey(r.data_pagamento);
+      if (!month) return;
+      if (!data[catNome]) data[catNome] = {};
+      data[catNome][month] = (data[catNome][month] ?? 0) + r.valor;
+    });
+
     // Despesas (exclui todas as categorias de fatura consolidada do cartão)
     let dq = supabase
       .from('despesas')
       .select('categoria_id, valor, competencia, data_pagamento')
       .eq('usuario_id', user.id);
     if (tipoData === 'competencia') dq = dq.gte('competencia', dataInicio).lte('competencia', dataFim);
-    else dq = dq.gte('data_pagamento', dataInicio + '-01').lte('data_pagamento', dataFim + '-31');
+    else dq = dq.gte('data_pagamento', inicioDia).lte('data_pagamento', fimDia);
     if (selectedCats.length < categorias.length) dq = dq.in('categoria_id', selectedCats);
     const { data: despesas } = await dq;
 
@@ -94,6 +109,7 @@ export default function ComparativoMensal() {
     });
 
     // Itens fatura
+    let itens: ItemFaturaReport[] = [];
     if (tipoData === 'pagamento') {
       let pq = supabase
         .from('despesas')
@@ -101,42 +117,58 @@ export default function ComparativoMensal() {
         .eq('usuario_id', user.id)
         .not('lote_id', 'is', null)
         .not('data_pagamento', 'is', null);
-      pq = pq.gte('data_pagamento', `${dataInicio}-01`).lte('data_pagamento', `${dataFim}-31`);
+      pq = pq.gte('data_pagamento', inicioDia).lte('data_pagamento', fimDia);
 
       const { data: pagamentosFatura } = await pq;
       pagamentosFatura?.forEach((item) => {
         if (!item.lote_id || !item.data_pagamento) return;
         invoicePayments.set(item.lote_id, item.data_pagamento);
       });
+
+      const invoiceIds = Array.from(new Set((pagamentosFatura ?? [])
+        .map((item) => item.lote_id)
+        .filter((value): value is string => Boolean(value))));
+
+      if (invoiceIds.length > 0) {
+        let iq = supabase
+          .from('itens_fatura')
+          .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
+          .eq('usuario_id', user.id)
+          .in('fatura_id', invoiceIds);
+        if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
+        const { data: paidItems } = await iq;
+        itens = (paidItems ?? []) as ItemFaturaReport[];
+      }
+    } else {
+      // Server-side competencia range filter prevents hitting Supabase's 1000-row default limit.
+      let iq = supabase
+        .from('itens_fatura')
+        .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
+        .eq('usuario_id', user.id)
+        .gte('competencia', inicioDia)
+        .lte('competencia', fimDia);
+      if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
+      const { data: competenciaItems } = await iq;
+      itens = (competenciaItems ?? []) as ItemFaturaReport[];
     }
 
-    // Server-side competencia range filter prevents hitting Supabase's 1000-row default limit.
-    let iq = supabase
-      .from('itens_fatura')
-      .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
-      .eq('usuario_id', user.id)
-      .gte('competencia', `${dataInicio}-01`)
-      .lte('competencia', `${dataFim}-31`);
-    if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
-    const { data: itens } = await iq;
-
-    ((itens ?? []) as ItemFaturaReport[])
+    itens
       .filter((it) => {
-        const compRef = getMonthKey(it.faturas_cartao?.mes_ano ?? it.competencia);
-        const dataRef = invoicePayments.get(it.fatura_id) ?? it.faturas_cartao?.data_vencimento ?? it.data;
+        const month = resolveInvoiceItemMonth({
+          tipoData,
+          competencia: it.faturas_cartao?.mes_ano ?? it.competencia,
+          paymentDate: invoicePayments.get(it.fatura_id),
+        });
 
-        if (tipoData === 'competencia') {
-          return Boolean(compRef && compRef >= dataInicio && compRef <= dataFim);
-        }
-
-        return Boolean(dataRef && dataRef >= `${dataInicio}-01` && dataRef <= `${dataFim}-31`);
+        return Boolean(month && month >= dataInicio && month <= dataFim);
       })
-      .forEach(it => {
+      .forEach((it) => {
       const catNome = it.categoria_id ? catMap[it.categoria_id] ?? 'Sem' : 'Sem';
-      const month =
-        tipoData === 'competencia'
-          ? getMonthKey(it.faturas_cartao?.mes_ano ?? it.competencia)
-          : getMonthKey(invoicePayments.get(it.fatura_id) ?? it.faturas_cartao?.data_vencimento ?? it.data);
+      const month = resolveInvoiceItemMonth({
+        tipoData,
+        competencia: it.faturas_cartao?.mes_ano ?? it.competencia,
+        paymentDate: invoicePayments.get(it.fatura_id),
+      });
       if (!month) return;
       if (!data[catNome]) data[catNome] = {};
       data[catNome][month] = (data[catNome][month] ?? 0) + it.valor;
@@ -192,7 +224,7 @@ export default function ComparativoMensal() {
           <div className="flex flex-wrap gap-3 items-end">
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Tipo de data</label>
-              <Select value={tipoData} onValueChange={setTipoData}>
+              <Select value={tipoData} onValueChange={(value) => setTipoData(value as ComparisonDateType)}>
                 <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="competencia">Competência</SelectItem><SelectItem value="pagamento">Pagamento</SelectItem></SelectContent>
               </Select>

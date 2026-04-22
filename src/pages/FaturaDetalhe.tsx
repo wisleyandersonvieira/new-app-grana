@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { learnInvoiceCategorization } from '@/lib/fatura-import/service';
 import { normalizeInstallmentText, normalizeStatementDescription } from '@/lib/fatura-import/normalization';
 import { sanitizeCreditCardCategoryData } from '@/lib/credit-card-category';
+import { resolveInvoiceStatus } from '@/lib/invoice-status';
 
 type ItemFatura = {
   id?: string;
@@ -73,7 +74,7 @@ export default function FaturaDetalhe() {
       navigate('/faturas');
       return;
     }
-    const [{ data: cartao }, { data: prevFats }, { data: existingItems }, { data: cats }, { data: subs }, { data: linkedExpense }] = await Promise.all([
+    const [{ data: cartao }, { data: prevFats }, { data: existingItems }, { data: cats }, { data: subs }, { data: linkedExpenses }] = await Promise.all([
       supabase.from('contas').select('nome').eq('id', fat.conta_id).single(),
       supabase.from('faturas_cartao')
         .select('valor_total')
@@ -85,12 +86,12 @@ export default function FaturaDetalhe() {
       supabase.from('itens_fatura').select('*').eq('fatura_id', id).order('data_compra', { ascending: true }),
       supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
       supabase.from('subcategorias').select('id, nome, categoria_id').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
-      supabase.from('despesas').select('paga').eq('usuario_id', user.id).eq('lote_id', fat.id).maybeSingle(),
+      supabase.from('despesas').select('paga, data_pagamento').eq('usuario_id', user.id).eq('lote_id', fat.id),
     ]);
 
-    const statusAtual = linkedExpense?.paga ? 'quitada' : 'aberta';
+    const statusAtual = resolveInvoiceStatus(fat.status, linkedExpenses ?? []);
     setFatura({ ...fat, status: statusAtual });
-    setIsPaid(linkedExpense?.paga ?? fat.status === 'quitada');
+    setIsPaid(statusAtual === 'quitada');
 
     if (cartao) setCartaoNome(cartao.nome);
     setFaturaAnteriorTotal(prevFats && prevFats.length > 0 ? prevFats[0].valor_total : null);
