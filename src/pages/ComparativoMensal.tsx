@@ -32,6 +32,8 @@ type ItemFaturaReport = {
   } | null;
 };
 
+type SectionData = Record<string, Record<string, number>>;
+
 export default function ComparativoMensal() {
   const { user } = useAuth();
   const currentYear = new Date().getFullYear();
@@ -41,7 +43,10 @@ export default function ComparativoMensal() {
   const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [months, setMonths] = useState<string[]>([]);
-  const [catMonthData, setCatMonthData] = useState<Record<string, Record<string, number>>>({});
+  const [reportData, setReportData] = useState<{ entradas: SectionData; saidas: SectionData }>({
+    entradas: {},
+    saidas: {},
+  });
   const [generated, setGenerated] = useState(false);
 
   useEffect(() => {
@@ -49,6 +54,25 @@ export default function ComparativoMensal() {
     supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).order('nome')
       .then(({ data }) => { if (data) { setCategorias(data); setSelectedCats(data.map(c => c.id)); } });
   }, [user]);
+
+  const addSectionValue = (
+    sectionData: SectionData,
+    categoryName: string,
+    month: string,
+    value: number,
+  ) => {
+    if (!sectionData[categoryName]) sectionData[categoryName] = {};
+    sectionData[categoryName][month] = (sectionData[categoryName][month] ?? 0) + value;
+  };
+
+  const getSectionMonthTotal = (sectionData: SectionData, month: string) =>
+    Object.values(sectionData).reduce((sum, monthData) => sum + (monthData[month] ?? 0), 0);
+
+  const getSectionGrandTotal = (sectionData: SectionData) =>
+    Object.values(sectionData).reduce(
+      (sum, monthData) => sum + Object.values(monthData).reduce((subtotal, value) => subtotal + value, 0),
+      0,
+    );
 
   const generate = async () => {
     if (!user || !dataInicio || !dataFim) return;
@@ -69,7 +93,10 @@ export default function ComparativoMensal() {
     );
     const invoicePayments = new Map<string, string>();
 
-    const data: Record<string, Record<string, number>> = {};
+    const nextReportData: { entradas: SectionData; saidas: SectionData } = {
+      entradas: {},
+      saidas: {},
+    };
 
     // Receitas
     let rq = supabase
@@ -85,8 +112,7 @@ export default function ComparativoMensal() {
       const catNome = r.categoria_id ? catMap[r.categoria_id] ?? 'Sem' : 'Sem';
       const month = tipoData === 'competencia' ? getMonthKey(r.competencia) : getMonthKey(r.data_pagamento);
       if (!month) return;
-      if (!data[catNome]) data[catNome] = {};
-      data[catNome][month] = (data[catNome][month] ?? 0) + r.valor;
+      addSectionValue(nextReportData.entradas, catNome, month, r.valor);
     });
 
     // Despesas (exclui todas as categorias de fatura consolidada do cartão)
@@ -104,8 +130,7 @@ export default function ComparativoMensal() {
       const catNome = d.categoria_id ? catMap[d.categoria_id] ?? 'Sem' : 'Sem';
       const month = tipoData === 'competencia' ? getMonthKey(d.competencia) : getMonthKey(d.data_pagamento);
       if (!month) return;
-      if (!data[catNome]) data[catNome] = {};
-      data[catNome][month] = (data[catNome][month] ?? 0) + d.valor;
+      addSectionValue(nextReportData.saidas, catNome, month, -d.valor);
     });
 
     // Itens fatura
@@ -170,11 +195,10 @@ export default function ComparativoMensal() {
         paymentDate: invoicePayments.get(it.fatura_id),
       });
       if (!month) return;
-      if (!data[catNome]) data[catNome] = {};
-      data[catNome][month] = (data[catNome][month] ?? 0) + it.valor;
+      addSectionValue(nextReportData.saidas, catNome, month, -it.valor);
     });
 
-    setCatMonthData(data);
+    setReportData(nextReportData);
     setGenerated(true);
   };
 
@@ -183,13 +207,47 @@ export default function ComparativoMensal() {
 
   const handleExportPDF = () => {
     const cols = [{ header: 'Categoria', key: 'cat' }, ...months.map(m => ({ header: formatMonth(m), key: m })), { header: 'Total', key: 'total' }];
-    const rows = Object.keys(catMonthData).sort().map(catNome => {
-      const row: Record<string, any> = { cat: catNome };
-      let total = 0;
-      months.forEach(m => { const v = catMonthData[catNome][m] ?? 0; row[m] = formatCurrency(v); total += v; });
-      row.total = formatCurrency(total);
-      return row;
+    const buildSectionExportRows = (title: string, sectionData: SectionData, subtotalLabel: string) => {
+      if (Object.keys(sectionData).length === 0) return [];
+
+      const titleRow: Record<string, any> = { cat: title };
+      months.forEach((month) => { titleRow[month] = ''; });
+      titleRow.total = '';
+
+      const dataRows = Object.keys(sectionData).sort().map((catNome) => {
+        const row: Record<string, any> = { cat: catNome };
+        let total = 0;
+        months.forEach((month) => {
+          const value = sectionData[catNome][month] ?? 0;
+          row[month] = value ? formatCurrency(value) : '-';
+          total += value;
+        });
+        row.total = formatCurrency(total);
+        return row;
+      });
+
+      const subtotalRow: Record<string, any> = { cat: subtotalLabel };
+      months.forEach((month) => { subtotalRow[month] = formatCurrency(getSectionMonthTotal(sectionData, month)); });
+      subtotalRow.total = formatCurrency(getSectionGrandTotal(sectionData));
+
+      return [titleRow, ...dataRows, subtotalRow];
+    };
+
+    const saldoRow: Record<string, any> = { cat: 'Saldo' };
+    months.forEach((month) => {
+      saldoRow[month] = formatCurrency(
+        getSectionMonthTotal(reportData.entradas, month) + getSectionMonthTotal(reportData.saidas, month),
+      );
     });
+    saldoRow.total = formatCurrency(
+      getSectionGrandTotal(reportData.entradas) + getSectionGrandTotal(reportData.saidas),
+    );
+
+    const rows = [
+      ...buildSectionExportRows('ENTRADAS', reportData.entradas, 'Total Entradas'),
+      ...buildSectionExportRows('SAÍDAS', reportData.saidas, 'Total Saídas'),
+      saldoRow,
+    ];
     exportToPDF(rows, cols, 'Comparativo Mensal', 'comparativo-mensal');
   };
 
@@ -248,32 +306,86 @@ export default function ComparativoMensal() {
       {generated && (
         <Card>
           <CardContent className="pt-4">
-            {Object.keys(catMonthData).length === 0 ? (
+            {Object.keys(reportData.entradas).length === 0 && Object.keys(reportData.saidas).length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum dado encontrado para o periodo e filtros selecionados.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead><tr className="border-b"><th className="py-1 px-2 text-left">Categoria</th>{months.map(m => <th key={m} className="py-1 px-2 text-right">{formatMonth(m)}</th>)}<th className="py-1 px-2 text-right">Total</th></tr></thead>
                   <tbody>
-                    {Object.keys(catMonthData).sort().map(catNome => {
-                      let total = 0;
-                      return (
-                        <tr key={catNome} className="border-b hover:bg-muted/50">
-                          <td className="py-1 px-2">{catNome}</td>
-                          {months.map(m => { const v = catMonthData[catNome][m] ?? 0; total += v; return <td key={m} className="py-1 px-2 text-right">{v ? formatCurrency(v) : '-'}</td>; })}
-                          <td className="py-1 px-2 text-right font-medium">{formatCurrency(total)}</td>
+                    {Object.keys(reportData.entradas).length > 0 && (
+                      <>
+                        <tr className="border-b bg-green-50/70 font-semibold text-green-700">
+                          <td className="py-1.5 px-2">ENTRADAS</td>
+                          {months.map((month) => <td key={month} className="py-1.5 px-2 text-right" />)}
+                          <td className="py-1.5 px-2 text-right" />
                         </tr>
-                      );
-                    })}
+                        {Object.keys(reportData.entradas).sort().map((catNome) => {
+                          let total = 0;
+                          return (
+                            <tr key={`entrada-${catNome}`} className="border-b hover:bg-muted/50">
+                              <td className="py-1 px-2">{catNome}</td>
+                              {months.map((month) => {
+                                const value = reportData.entradas[catNome][month] ?? 0;
+                                total += value;
+                                return <td key={month} className="py-1 px-2 text-right text-green-600">{value ? formatCurrency(value) : '-'}</td>;
+                              })}
+                              <td className="py-1 px-2 text-right font-medium text-green-700">{formatCurrency(total)}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr className="border-b bg-green-50/40 font-semibold">
+                          <td className="py-1.5 px-2">Total Entradas</td>
+                          {months.map((month) => (
+                            <td key={month} className="py-1.5 px-2 text-right text-green-700">
+                              {formatCurrency(getSectionMonthTotal(reportData.entradas, month))}
+                            </td>
+                          ))}
+                          <td className="py-1.5 px-2 text-right text-green-700">{formatCurrency(getSectionGrandTotal(reportData.entradas))}</td>
+                        </tr>
+                      </>
+                    )}
+                    {Object.keys(reportData.saidas).length > 0 && (
+                      <>
+                        <tr className="border-b bg-red-50/70 font-semibold text-red-700">
+                          <td className="py-1.5 px-2">SAÍDAS</td>
+                          {months.map((month) => <td key={month} className="py-1.5 px-2 text-right" />)}
+                          <td className="py-1.5 px-2 text-right" />
+                        </tr>
+                        {Object.keys(reportData.saidas).sort().map((catNome) => {
+                          let total = 0;
+                          return (
+                            <tr key={`saida-${catNome}`} className="border-b hover:bg-muted/50">
+                              <td className="py-1 px-2">{catNome}</td>
+                              {months.map((month) => {
+                                const value = reportData.saidas[catNome][month] ?? 0;
+                                total += value;
+                                return <td key={month} className="py-1 px-2 text-right text-red-600">{value ? formatCurrency(value) : '-'}</td>;
+                              })}
+                              <td className="py-1 px-2 text-right font-medium text-red-700">{formatCurrency(total)}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr className="border-b bg-red-50/40 font-semibold">
+                          <td className="py-1.5 px-2">Total Saídas</td>
+                          {months.map((month) => (
+                            <td key={month} className="py-1.5 px-2 text-right text-red-700">
+                              {formatCurrency(getSectionMonthTotal(reportData.saidas, month))}
+                            </td>
+                          ))}
+                          <td className="py-1.5 px-2 text-right text-red-700">{formatCurrency(getSectionGrandTotal(reportData.saidas))}</td>
+                        </tr>
+                      </>
+                    )}
                   </tbody>
                   <tfoot>
                     <tr className="font-semibold border-t">
-                      <td className="py-1 px-2">Total</td>
+                      <td className="py-1 px-2">Saldo</td>
                       {months.map(m => {
-                        const v = Object.values(catMonthData).reduce((s, d) => s + (d[m] ?? 0), 0);
+                        const v = getSectionMonthTotal(reportData.entradas, m) + getSectionMonthTotal(reportData.saidas, m);
                         return <td key={m} className="py-1 px-2 text-right">{formatCurrency(v)}</td>;
                       })}
-                      <td className="py-1 px-2 text-right">{formatCurrency(Object.values(catMonthData).reduce((s, d) => s + Object.values(d).reduce((a, b) => a + b, 0), 0))}</td>
+                      <td className="py-1 px-2 text-right">{formatCurrency(getSectionGrandTotal(reportData.entradas) + getSectionGrandTotal(reportData.saidas))}</td>
                     </tr>
                   </tfoot>
                 </table>
