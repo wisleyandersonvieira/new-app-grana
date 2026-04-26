@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildInvoicePaymentDateMap,
+  getPaidInvoiceIds,
   getMonthDateRange,
   getMonthsBetween,
   isInvoiceItemWithinRange,
@@ -59,6 +61,21 @@ describe('comparativo mensal helpers', () => {
         paymentDate: null,
       }),
     ).toBeNull();
+  });
+
+  it('monta o mapa de pagamento das faturas pelo lançamento consolidado', () => {
+    const rows = [
+      { lote_id: 'fatura-1', data_pagamento: '2026-04-05' },
+      { lote_id: 'fatura-2', data_pagamento: null },
+      { lote_id: null, data_pagamento: '2026-04-10' },
+      { lote_id: 'fatura-1', data_pagamento: '2026-04-07' },
+    ];
+
+    const paymentMap = buildInvoicePaymentDateMap(rows);
+
+    expect(paymentMap.get('fatura-1')).toBe('2026-04-07');
+    expect(paymentMap.has('fatura-2')).toBe(false);
+    expect(getPaidInvoiceIds(rows)).toEqual(['fatura-1']);
   });
 
   it('considera o intervalo correto ao filtrar itens de fatura por pagamento', () => {

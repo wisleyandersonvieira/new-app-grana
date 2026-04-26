@@ -6,6 +6,11 @@ type InvoiceMonthParams = {
   paymentDate: string | null | undefined;
 };
 
+export type InvoicePaymentRow = {
+  lote_id: string | null | undefined;
+  data_pagamento: string | null | undefined;
+};
+
 export function getMonthsBetween(start: string, end: string) {
   const result: string[] = [];
   const [sy, sm] = start.split('-').map(Number);
@@ -39,6 +44,25 @@ export function getMonthDateRange(monthValue: string) {
 
 export function getMonthKey(value: string | null | undefined) {
   return value?.substring(0, 7) ?? null;
+}
+
+export function buildInvoicePaymentDateMap(rows: InvoicePaymentRow[]) {
+  const invoicePayments = new Map<string, string>();
+
+  rows.forEach((row) => {
+    if (!row.lote_id || !row.data_pagamento) return;
+
+    const currentPaymentDate = invoicePayments.get(row.lote_id);
+    if (!currentPaymentDate || row.data_pagamento > currentPaymentDate) {
+      invoicePayments.set(row.lote_id, row.data_pagamento);
+    }
+  });
+
+  return invoicePayments;
+}
+
+export function getPaidInvoiceIds(rows: InvoicePaymentRow[]) {
+  return Array.from(buildInvoicePaymentDateMap(rows).keys());
 }
 
 export function resolveInvoiceItemDate({

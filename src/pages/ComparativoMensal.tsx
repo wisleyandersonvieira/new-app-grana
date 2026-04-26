@@ -9,6 +9,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
 import {
   type ComparisonDateType,
+  type InvoicePaymentRow,
+  buildInvoicePaymentDateMap,
+  getPaidInvoiceIds,
   getMonthDateRange,
   getMonthKey,
   getMonthsBetween,
@@ -92,7 +95,7 @@ export default function ComparativoMensal() {
         .filter(c => isCreditCardCategoryName(c.nome))
         .map(c => c.id),
     );
-    const invoicePayments = new Map<string, string>();
+    let invoicePayments = new Map<string, string>();
 
     const nextReportData: { entradas: SectionData; saidas: SectionData } = {
       entradas: {},
@@ -146,14 +149,9 @@ export default function ComparativoMensal() {
       pq = pq.gte('data_pagamento', inicioDia).lte('data_pagamento', fimDia);
 
       const { data: pagamentosFatura } = await pq;
-      pagamentosFatura?.forEach((item) => {
-        if (!item.lote_id || !item.data_pagamento) return;
-        invoicePayments.set(item.lote_id, item.data_pagamento);
-      });
-
-      const invoiceIds = Array.from(new Set((pagamentosFatura ?? [])
-        .map((item) => item.lote_id)
-        .filter((value): value is string => Boolean(value))));
+      const paymentRows = (pagamentosFatura ?? []) as InvoicePaymentRow[];
+      invoicePayments = buildInvoicePaymentDateMap(paymentRows);
+      const invoiceIds = getPaidInvoiceIds(paymentRows);
 
       if (invoiceIds.length > 0) {
         let iq = supabase
