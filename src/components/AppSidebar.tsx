@@ -53,7 +53,6 @@ const menuItems: MenuItem[] = [
     title: 'Relatórios', icon: BarChart3,
     children: [
       { title: 'Relatório de Contas', url: '/relatorios/contas', icon: FileText },
-      { title: 'Por Categoria', url: '/relatorios/categoria', icon: FileText },
       { title: 'Detalhado', url: '/relatorios/detalhado', icon: FileText },
       { title: 'Completo', url: '/relatorios/completo', icon: FileText },
       { title: 'Comparativo Mensal', url: '/relatorios/comparativo', icon: BarChart3 },

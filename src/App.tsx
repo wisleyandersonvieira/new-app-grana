@@ -31,7 +31,6 @@ import Transferencias from "./pages/Transferencias";
 import NovaTransferencia from "./pages/NovaTransferencia";
 import Bloqueios from "./pages/Bloqueios";
 import UsuariosPage from "./pages/Usuarios";
-import RelatorioPorCategoria from "./pages/RelatorioPorCategoria";
 import RelatorioDetalhado from "./pages/RelatorioDetalhado";
 import RelatorioCompleto from "./pages/RelatorioCompleto";
 import RelatorioContas from "./pages/RelatorioContas";
@@ -87,7 +86,6 @@ const App = () => (
                       <Route path="/nova-transferencia" element={<NovaTransferencia />} />
                       <Route path="/bloqueios" element={<Bloqueios />} />
                       <Route path="/usuarios" element={<UsuariosPage />} />
-                      <Route path="/relatorios/categoria" element={<RelatorioPorCategoria />} />
                       <Route path="/relatorios/detalhado" element={<RelatorioDetalhado />} />
                       <Route path="/relatorios/completo" element={<RelatorioCompleto />} />
                       <Route path="/relatorios/contas" element={<RelatorioContas />} />
