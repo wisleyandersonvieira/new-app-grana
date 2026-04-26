@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
 import {
   type ComparisonDateType,
+  type InvoiceReferenceRow,
   type InvoicePaymentRow,
   buildInvoicePaymentDateMap,
   getPaidInvoiceIds,
@@ -142,16 +143,22 @@ export default function ComparativoMensal() {
     if (tipoData === 'pagamento') {
       let pq = supabase
         .from('despesas')
-        .select('lote_id, data_pagamento')
+        .select('lote_id, data_pagamento, categoria_id, competencia, valor')
         .eq('usuario_id', user.id)
-        .not('lote_id', 'is', null)
         .not('data_pagamento', 'is', null);
       pq = pq.gte('data_pagamento', inicioDia).lte('data_pagamento', fimDia);
 
-      const { data: pagamentosFatura } = await pq;
+      const [{ data: pagamentosFatura }, { data: faturasReferencia }] = await Promise.all([
+        pq,
+        supabase
+          .from('faturas_cartao')
+          .select('id, mes_ano, valor_total')
+          .eq('usuario_id', user.id),
+      ]);
       const paymentRows = (pagamentosFatura ?? []) as InvoicePaymentRow[];
-      invoicePayments = buildInvoicePaymentDateMap(paymentRows);
-      const invoiceIds = getPaidInvoiceIds(paymentRows);
+      const invoiceRows = (faturasReferencia ?? []) as InvoiceReferenceRow[];
+      invoicePayments = buildInvoicePaymentDateMap(paymentRows, invoiceRows, cartaoCatIds);
+      const invoiceIds = getPaidInvoiceIds(paymentRows, invoiceRows, cartaoCatIds);
 
       if (invoiceIds.length > 0) {
         let iq = supabase

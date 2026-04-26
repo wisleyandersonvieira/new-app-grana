@@ -9,6 +9,15 @@ type InvoiceMonthParams = {
 export type InvoicePaymentRow = {
   lote_id: string | null | undefined;
   data_pagamento: string | null | undefined;
+  categoria_id?: string | null | undefined;
+  competencia?: string | null | undefined;
+  valor?: number | null | undefined;
+};
+
+export type InvoiceReferenceRow = {
+  id: string;
+  mes_ano: string | null | undefined;
+  valor_total: number | null | undefined;
 };
 
 export function getMonthsBetween(start: string, end: string) {
@@ -46,7 +55,16 @@ export function getMonthKey(value: string | null | undefined) {
   return value?.substring(0, 7) ?? null;
 }
 
-export function buildInvoicePaymentDateMap(rows: InvoicePaymentRow[]) {
+function toComparableAmount(value: number | null | undefined) {
+  if (value == null) return null;
+  return Math.round(Number(value) * 100);
+}
+
+export function buildInvoicePaymentDateMap(
+  rows: InvoicePaymentRow[],
+  invoices: InvoiceReferenceRow[] = [],
+  creditCardCategoryIds: Set<string> = new Set(),
+) {
   const invoicePayments = new Map<string, string>();
 
   rows.forEach((row) => {
@@ -58,11 +76,35 @@ export function buildInvoicePaymentDateMap(rows: InvoicePaymentRow[]) {
     }
   });
 
+  rows.forEach((row) => {
+    if (row.lote_id || !row.data_pagamento || !row.categoria_id) return;
+    if (!creditCardCategoryIds.has(row.categoria_id)) return;
+
+    const paymentCompetence = getMonthKey(row.competencia);
+    const paymentAmount = toComparableAmount(row.valor);
+    if (!paymentCompetence || paymentAmount == null) return;
+
+    const matchingInvoices = invoices.filter(
+      (invoice) =>
+        !invoicePayments.has(invoice.id) &&
+        getMonthKey(invoice.mes_ano) === paymentCompetence &&
+        toComparableAmount(invoice.valor_total) === paymentAmount,
+    );
+
+    if (matchingInvoices.length !== 1) return;
+
+    invoicePayments.set(matchingInvoices[0].id, row.data_pagamento);
+  });
+
   return invoicePayments;
 }
 
-export function getPaidInvoiceIds(rows: InvoicePaymentRow[]) {
-  return Array.from(buildInvoicePaymentDateMap(rows).keys());
+export function getPaidInvoiceIds(
+  rows: InvoicePaymentRow[],
+  invoices: InvoiceReferenceRow[] = [],
+  creditCardCategoryIds: Set<string> = new Set(),
+) {
+  return Array.from(buildInvoicePaymentDateMap(rows, invoices, creditCardCategoryIds).keys());
 }
 
 export function resolveInvoiceItemDate({

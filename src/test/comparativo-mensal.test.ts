@@ -78,6 +78,34 @@ describe('comparativo mensal helpers', () => {
     expect(getPaidInvoiceIds(rows)).toEqual(['fatura-1']);
   });
 
+  it('relaciona pagamento de fatura sem lote pela competência e valor da fatura', () => {
+    const rows = [
+      {
+        lote_id: null,
+        data_pagamento: '2026-04-15',
+        categoria_id: 'cat-cartao',
+        competencia: '2026-03',
+        valor: 250.1,
+      },
+      {
+        lote_id: null,
+        data_pagamento: '2026-04-20',
+        categoria_id: 'cat-mercado',
+        competencia: '2026-03',
+        valor: 250.1,
+      },
+    ];
+    const invoices = [
+      { id: 'fatura-3', mes_ano: '2026-03', valor_total: 250.1 },
+      { id: 'fatura-4', mes_ano: '2026-04', valor_total: 250.1 },
+    ];
+
+    const paymentMap = buildInvoicePaymentDateMap(rows, invoices, new Set(['cat-cartao']));
+
+    expect(paymentMap.get('fatura-3')).toBe('2026-04-15');
+    expect(paymentMap.has('fatura-4')).toBe(false);
+  });
+
   it('considera o intervalo correto ao filtrar itens de fatura por pagamento', () => {
     expect(
       isInvoiceItemWithinRange({
