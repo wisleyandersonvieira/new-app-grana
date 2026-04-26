@@ -193,6 +193,35 @@ function detectPageSplitX(pageWidth: number, items: ItauVisualItem[]): number | 
 
   if (leftCount < 6 || rightCount < 6 || rightColumnStarts < 3) return null;
 
+  // Itaú fatura has left column data spanning roughly x=80 to x=335 (date,
+  // description, installment, value) and right column starting at x≈367.
+  // The page midpoint (~297) falls INSIDE the left column, splitting its value
+  // tokens (x≈319-327) into the right column. We must detect the actual gutter
+  // between the two columns by looking for the largest empty horizontal band
+  // around the midpoint, then use its center as the split position.
+  const searchMin = midpoint - 60;
+  const searchMax = midpoint + 80;
+  const candidateXs = items
+    .map((item) => item.x)
+    .filter((x) => x >= searchMin - 20 && x <= searchMax + 20)
+    .sort((a, b) => a - b);
+
+  let bestGapStart = midpoint;
+  let bestGapEnd = midpoint;
+  for (let i = 1; i < candidateXs.length; i += 1) {
+    const prev = candidateXs[i - 1];
+    const curr = candidateXs[i];
+    if (prev > searchMax || curr < searchMin) continue;
+    if (curr - prev > bestGapEnd - bestGapStart) {
+      bestGapStart = prev;
+      bestGapEnd = curr;
+    }
+  }
+
+  if (bestGapEnd - bestGapStart >= 20) {
+    return (bestGapStart + bestGapEnd) / 2;
+  }
+
   return midpoint;
 }
 
