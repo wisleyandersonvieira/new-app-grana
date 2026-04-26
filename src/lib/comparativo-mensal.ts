@@ -41,14 +41,47 @@ export function getMonthKey(value: string | null | undefined) {
   return value?.substring(0, 7) ?? null;
 }
 
-export function resolveInvoiceItemMonth({
+export function resolveInvoiceItemDate({
   tipoData,
   competencia,
   paymentDate,
 }: InvoiceMonthParams) {
   if (tipoData === 'competencia') {
-    return getMonthKey(competencia);
+    return competencia ?? null;
   }
 
-  return getMonthKey(paymentDate);
+  return paymentDate ?? null;
+}
+
+export function resolveInvoiceItemMonth({
+  tipoData,
+  competencia,
+  paymentDate,
+}: InvoiceMonthParams) {
+  return getMonthKey(resolveInvoiceItemDate({ tipoData, competencia, paymentDate }));
+}
+
+type InvoiceRangeParams = InvoiceMonthParams & {
+  startMonth: string;
+  endMonth: string;
+  startDate: string;
+  endDate: string;
+};
+
+export function isInvoiceItemWithinRange({
+  tipoData,
+  competencia,
+  paymentDate,
+  startMonth,
+  endMonth,
+  startDate,
+  endDate,
+}: InvoiceRangeParams) {
+  if (tipoData === 'competencia') {
+    const month = resolveInvoiceItemMonth({ tipoData, competencia, paymentDate });
+    return Boolean(month && month >= startMonth && month <= endMonth);
+  }
+
+  const date = resolveInvoiceItemDate({ tipoData, competencia, paymentDate });
+  return Boolean(date && date >= startDate && date <= endDate);
 }

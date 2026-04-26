@@ -12,6 +12,7 @@ import {
   getMonthDateRange,
   getMonthKey,
   getMonthsBetween,
+  isInvoiceItemWithinRange,
   resolveInvoiceItemMonth,
 } from '@/lib/comparativo-mensal';
 import { exportToPDF } from '@/lib/export';
@@ -179,13 +180,17 @@ export default function ComparativoMensal() {
 
     itens
       .filter((it) => {
-        const month = resolveInvoiceItemMonth({
+        if (it.categoria_id && cartaoCatIds.has(it.categoria_id)) return false;
+
+        return isInvoiceItemWithinRange({
           tipoData,
           competencia: it.faturas_cartao?.mes_ano ?? it.competencia,
           paymentDate: invoicePayments.get(it.fatura_id),
+          startMonth: dataInicio,
+          endMonth: dataFim,
+          startDate: inicioDia,
+          endDate: fimDia,
         });
-
-        return Boolean(month && month >= dataInicio && month <= dataFim);
       })
       .forEach((it) => {
       const catNome = it.categoria_id ? catMap[it.categoria_id] ?? 'Sem' : 'Sem';
