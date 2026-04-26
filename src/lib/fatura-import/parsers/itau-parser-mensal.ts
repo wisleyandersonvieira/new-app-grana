@@ -415,13 +415,32 @@ function parseColumnGroup(
   const completeLines: ItauVisualLine[] = [];
   const incompleteDateLines: ItauVisualLine[] = [];
   const amountOnlyLines: ItauVisualLine[] = [];
+  const blockLines: ItauVisualLine[] = [];
+  let pendingBlock: ItauVisualLine | null = null;
+
+  const flushPendingBlock = (reason: string) => {
+    if (!pendingBlock) return;
+
+    diagnostics.ignoredDateLines.push({
+      line: pendingBlock.text,
+      pageNumber: pendingBlock.pageNumber,
+      columnIndex: pendingBlock.columnIndex,
+      reason,
+      section: pendingBlock.section,
+    });
+    pendingBlock = null;
+  };
 
   for (const line of columnLines) {
     console.debug(`[itau-v2] page ${line.pageNumber} column ${line.columnIndex} section ${line.section} line: ${line.text}`);
 
-    if (!isValidTransactionSection(line.section)) continue;
+    if (!isValidTransactionSection(line.section)) {
+      flushPendingBlock('Bloco de transação interrompido por seção não importável');
+      continue;
+    }
 
     if (IOF_REPASSE.test(line.text)) {
+      flushPendingBlock('Bloco de transação interrompido por repasse de IOF');
       const item = createIofItem(line.text, ctx, line.cardLast4);
       if (item) {
         registerImportedItem(diagnostics, item, line);
@@ -433,6 +452,7 @@ function parseColumnGroup(
 
     const segments = splitLineByDates(line.text);
     if (segments.length > 1) {
+      flushPendingBlock('Bloco de transação interrompido por linha com múltiplas datas');
       diagnostics.multipleDateLines.push({
         line: line.text,
         pageNumber: line.pageNumber,
@@ -446,11 +466,27 @@ function parseColumnGroup(
       const segmentedLine = { ...line, text: segment };
 
       if (AMOUNT_ONLY.test(segment)) {
+        if (pendingBlock) {
+          blockLines.push({
+            ...pendingBlock,
+            text: `${pendingBlock.text} ${segment}`.replace(/\s+/g, ' ').trim(),
+          });
+          pendingBlock = null;
+          continue;
+        }
         amountOnlyLines.push(segmentedLine);
         continue;
       }
 
       if (!DATE_START.test(segment)) {
+        if (pendingBlock && segment.length > 0 && !isIgnorableLine(segment)) {
+          pendingBlock = {
+            ...pendingBlock,
+            text: `${pendingBlock.text} ${segment}`.replace(/\s+/g, ' ').trim(),
+          };
+          continue;
+        }
+
         if (segment.length > 0 && !isIgnorableLine(segment)) {
           diagnostics.failures.push({
             line: segment,
@@ -463,15 +499,19 @@ function parseColumnGroup(
         continue;
       }
 
+      flushPendingBlock('Linha com nova data encontrada antes de valor monetário');
+
       if (AMOUNT_AT_END.test(segment)) {
         completeLines.push(segmentedLine);
       } else {
-        incompleteDateLines.push(segmentedLine);
+        pendingBlock = segmentedLine;
       }
     }
   }
 
-  for (const line of completeLines) {
+  flushPendingBlock('Bloco de transação terminou sem valor monetário associado');
+
+  for (const line of [...completeLines, ...blockLines]) {
     const item = extractItauTransactionParts(line.text, ctx);
     if (!item) {
       diagnostics.ignoredDateLines.push({

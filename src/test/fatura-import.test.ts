@@ -872,6 +872,35 @@ describe('Itaú parser estruturado por página/coluna/linha', () => {
     expect(parsed.diagnostics.itemsByPageColumnSection.length).toBeGreaterThan(0);
     expect(parsed.diagnostics.importedItems.some((item) => item.section === 'international')).toBe(true);
   });
+
+  it('reconstrói lançamento Itaú quando data, descrição/parcela e valor vêm em linhas visuais separadas', () => {
+    const parsed = parseItauDocument(buildStructuredItauDoc([
+      {
+        leftRows: [
+          'Banco Itaú S.A.',
+          'Resumo da fatura em R$',
+          'CLIENTE TESTE (final 8275)',
+          'Lançamentos: compras e saques',
+          'DATA ESTABELECIMENTO VALOR EM R$',
+          '22/08',
+          'VIVARA MOR 08/10',
+          '930,15',
+          '03/03',
+          'CAFE MINEIRO PANIFICAD',
+          '346,00',
+          'Compras parceladas - próximas faturas',
+          '22/08 VIVARA MOR 09/10 930,15',
+        ],
+        rightRows: [],
+      },
+    ]), { competencia: '2026-04' });
+
+    expect(parsed.items).toHaveLength(2);
+    expect(parsed.items.find((item) => item.descricao_original === 'VIVARA MOR 08/10')?.valor).toBe(930.15);
+    expect(parsed.items.find((item) => item.descricao_original === 'VIVARA MOR 08/10')?.parcelas).toBe('8/10');
+    expect(parsed.items.find((item) => item.descricao_original === 'CAFE MINEIRO PANIFICAD')?.valor).toBe(346);
+    expect(parsed.items.some((item) => item.descricao_original === 'VIVARA MOR 09/10')).toBe(false);
+  });
 });
 
 describe('Sicoob parser – large invoice with multiple cardholders', () => {
