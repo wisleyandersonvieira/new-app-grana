@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Download } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
+import { ChevronDown, Download, Filter, Play, Tags } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getMonthName } from '@/lib/financial';
@@ -53,6 +56,7 @@ export default function ComparativoMensal() {
     saidas: {},
   });
   const [generated, setGenerated] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -215,6 +219,24 @@ export default function ComparativoMensal() {
   const toggleCat = (id: string) => setSelectedCats(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
   const formatMonth = (m: string) => { const [y, mo] = m.split('-'); return `${getMonthName(Number(mo) - 1).substring(0, 3)}/${y}`; };
 
+  const selectedCategoryNames = useMemo(
+    () => categorias.filter((categoria) => selectedCats.includes(categoria.id)).map((categoria) => categoria.nome),
+    [categorias, selectedCats],
+  );
+
+  const categorySummary = useMemo(() => {
+    if (categorias.length === 0) return 'Nenhuma categoria cadastrada';
+    if (selectedCats.length === categorias.length) return 'Todas as categorias';
+    if (selectedCats.length === 0) return 'Nenhuma categoria selecionada';
+
+    const visibleNames = selectedCategoryNames.slice(0, 2).join(', ');
+    const hiddenCount = selectedCats.length - 2;
+    return hiddenCount > 0 ? `${visibleNames} +${hiddenCount}` : visibleNames;
+  }, [categorias.length, selectedCats.length, selectedCategoryNames]);
+
+  const selectAllCategories = () => setSelectedCats(categorias.map((categoria) => categoria.id));
+  const clearCategories = () => setSelectedCats([]);
+
   const handleExportPDF = () => {
     const cols = [{ header: 'Categoria', key: 'cat' }, ...months.map(m => ({ header: formatMonth(m), key: m })), { header: 'Total', key: 'total' }];
     const buildSectionExportRows = (title: string, sectionData: SectionData, subtotalLabel: string) => {
@@ -265,15 +287,19 @@ export default function ComparativoMensal() {
   const CompSelect = ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) => {
     const parts = value ? value.split('-') : [String(currentYear), '01'];
     return (
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">{label}</label>
-        <div className="flex gap-1">
+      <div className="space-y-2">
+        <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</label>
+        <div className="grid grid-cols-[1fr_88px] gap-2">
           <Select value={parts[1] || '01'} onValueChange={(v) => onChange(`${parts[0]}-${v}`)}>
-            <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-11 min-w-[132px] rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>{Array.from({ length: 12 }, (_, i) => <SelectItem key={i} value={String(i + 1).padStart(2, '0')}>{getMonthName(i)}</SelectItem>)}</SelectContent>
           </Select>
           <Select value={parts[0] || String(currentYear)} onValueChange={(v) => onChange(`${v}-${parts[1]}`)}>
-            <SelectTrigger className="w-[80px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
           </Select>
         </div>
@@ -287,28 +313,97 @@ export default function ComparativoMensal() {
         <div><h1 className="text-2xl font-bold">Comparativo Mensal</h1><p className="text-muted-foreground">Categoria × Mês</p></div>
         {generated && <Button variant="outline" onClick={handleExportPDF}><Download className="mr-2 h-4 w-4" /> PDF</Button>}
       </div>
-      <Card>
-        <CardContent className="pt-4 space-y-4">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Tipo de data</label>
+      <Card className="overflow-hidden rounded-2xl border-slate-200/80 bg-white shadow-[0_14px_40px_-28px_hsl(224_48%_12%/0.45)]">
+        <CardContent className="space-y-6 p-5 sm:p-6">
+          <div className="flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Filter className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Filtros do comparativo</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Defina a visão, o período e as categorias para montar o relatório.</p>
+              </div>
+            </div>
+            <Badge variant="outline" className="w-fit rounded-full border-primary/15 bg-primary/5 px-3 py-1 text-primary">
+              {selectedCats.length} de {categorias.length} categorias
+            </Badge>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(180px,0.9fr)_minmax(240px,1.2fr)_minmax(240px,1.2fr)_minmax(150px,0.7fr)] xl:items-end">
+            <div className="space-y-2">
+              <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Tipo de data</label>
               <Select value={tipoData} onValueChange={(value) => setTipoData(value as ComparisonDateType)}>
-                <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="competencia">Competência</SelectItem><SelectItem value="pagamento">Pagamento</SelectItem></SelectContent>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="competencia">Competência</SelectItem>
+                  <SelectItem value="pagamento">Pagamento</SelectItem>
+                </SelectContent>
               </Select>
             </div>
             <CompSelect value={dataInicio} onChange={setDataInicio} label="Início" />
             <CompSelect value={dataFim} onChange={setDataFim} label="Fim" />
-            <Button onClick={generate}>Gerar</Button>
+            <Button onClick={generate} className="h-11 rounded-xl px-5 font-semibold shadow-sm shadow-primary/20">
+              <Play className="mr-2 h-4 w-4" /> Gerar
+            </Button>
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Categorias</label>
-            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-              {categorias.map(c => (
-                <label key={c.id} className="flex items-center gap-1 text-xs cursor-pointer">
-                  <Checkbox checked={selectedCats.includes(c.id)} onCheckedChange={() => toggleCat(c.id)} />{c.nome}
-                </label>
-              ))}
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-primary shadow-sm">
+                  <Tags className="h-4 w-4" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Categorias</label>
+                  <p className="mt-1 text-sm font-medium text-foreground">{categorySummary}</p>
+                </div>
+              </div>
+
+              <Popover open={categoriesOpen} onOpenChange={setCategoriesOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="h-11 justify-between rounded-xl border-slate-200 bg-white px-4 shadow-sm lg:min-w-[280px]">
+                    <span className="truncate text-left">
+                      {selectedCats.length === categorias.length ? 'Todas selecionadas' : `${selectedCats.length} selecionadas`}
+                    </span>
+                    <ChevronDown className="ml-3 h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-[min(92vw,520px)] rounded-2xl border-slate-200 p-0 shadow-xl">
+                  <div className="space-y-4 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold">Selecionar categorias</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">{selectedCats.length} de {categorias.length} categorias no filtro</p>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-xs" onClick={selectAllCategories}>
+                          Selecionar todas
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg px-2 text-xs" onClick={clearCategories}>
+                          Limpar
+                        </Button>
+                      </div>
+                    </div>
+                    <Separator />
+                    <div className="max-h-[300px] overflow-y-auto pr-1">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {categorias.map(c => (
+                          <label
+                            key={c.id}
+                            className="flex min-h-10 cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-sm transition hover:border-primary/15 hover:bg-primary/5"
+                          >
+                            <Checkbox checked={selectedCats.includes(c.id)} onCheckedChange={() => toggleCat(c.id)} />
+                            <span className="truncate">{c.nome}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </CardContent>
