@@ -154,7 +154,7 @@ function groupItemsIntoLines(items: ItauVisualItem[]): ItauVisualLine[] {
 
   groups.push(current);
 
-  return groups.map((group) => {
+  return groups.map((group): ItauVisualLine => {
     const ordered = [...group].sort((a, b) => a.x - b.x);
     let text = '';
 
