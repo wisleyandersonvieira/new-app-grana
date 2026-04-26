@@ -28,6 +28,7 @@ import {
 } from '@/lib/credit-card-category';
 
 type ItemFaturaReport = {
+  id: string;
   fatura_id: string;
   valor: number;
   categoria_id: string | null;
@@ -162,31 +163,44 @@ export default function ComparativoMensal() {
       const paymentRows = (pagamentosFatura ?? []) as InvoicePaymentRow[];
       const invoiceRows = (faturasReferencia ?? []) as InvoiceReferenceRow[];
       invoicePayments = buildInvoicePaymentDateMap(paymentRows, invoiceRows, cartaoCatIds);
-      const fallbackInvoicePayments = new Map(
-        (faturasReferencia ?? [])
-          .filter((invoice) => {
-            const date = invoice.data_vencimento;
-            return Boolean(date && date >= inicioDia && date <= fimDia);
-          })
-          .map((invoice) => [invoice.id, invoice.data_vencimento as string]),
-      );
-      const invoiceIds = Array.from(new Set([...invoicePayments.keys(), ...fallbackInvoicePayments.keys()]));
 
-      if (invoiceIds.length > 0) {
-        let iq = supabase
-          .from('itens_fatura')
-          .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento, status)')
-          .eq('usuario_id', user.id)
-          .in('fatura_id', invoiceIds);
-        if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
-        const { data: paidItems } = await iq;
-        itens = (paidItems ?? []) as ItemFaturaReport[];
-      }
+      let dueDateItemsQuery = supabase
+        .from('itens_fatura')
+        .select('id, fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento, status)')
+        .eq('usuario_id', user.id)
+        .gte('data', inicioDia)
+        .lte('data', fimDia);
+      if (selectedCats.length < categorias.length) dueDateItemsQuery = dueDateItemsQuery.in('categoria_id', selectedCats);
+
+      const invoiceIds = Array.from(invoicePayments.keys());
+      const explicitPaymentItemsQuery = invoiceIds.length > 0
+        ? (() => {
+            let query = supabase
+              .from('itens_fatura')
+              .select('id, fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento, status)')
+              .eq('usuario_id', user.id)
+              .in('fatura_id', invoiceIds);
+            if (selectedCats.length < categorias.length) query = query.in('categoria_id', selectedCats);
+            return query;
+          })()
+        : null;
+
+      const [{ data: dueDateItems }, explicitPaymentItemsResult] = await Promise.all([
+        dueDateItemsQuery,
+        explicitPaymentItemsQuery ?? Promise.resolve({ data: [] }),
+      ]);
+
+      const itemsByKey = new Map<string, ItemFaturaReport>();
+      [...(dueDateItems ?? []), ...((explicitPaymentItemsResult.data ?? []) as ItemFaturaReport[])].forEach((item) => {
+        const key = item.id;
+        itemsByKey.set(key, item as ItemFaturaReport);
+      });
+      itens = Array.from(itemsByKey.values());
     } else {
       // Server-side competencia range filter prevents hitting Supabase's 1000-row default limit.
       let iq = supabase
         .from('itens_fatura')
-        .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento, status)')
+        .select('id, fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento, status)')
         .eq('usuario_id', user.id)
         .gte('competencia', inicioDia)
         .lte('competencia', fimDia);
