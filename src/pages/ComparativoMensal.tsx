@@ -15,7 +15,6 @@ import {
   type InvoiceReferenceRow,
   type InvoicePaymentRow,
   buildInvoicePaymentDateMap,
-  getPaidInvoiceIds,
   getMonthDateRange,
   getMonthKey,
   getMonthsBetween,
@@ -37,6 +36,7 @@ type ItemFaturaReport = {
   faturas_cartao?: {
     mes_ano: string | null;
     data_vencimento: string | null;
+    status?: string | null;
   } | null;
 };
 
@@ -156,18 +156,26 @@ export default function ComparativoMensal() {
         pq,
         supabase
           .from('faturas_cartao')
-          .select('id, mes_ano, valor_total')
+          .select('id, mes_ano, valor_total, data_vencimento, status')
           .eq('usuario_id', user.id),
       ]);
       const paymentRows = (pagamentosFatura ?? []) as InvoicePaymentRow[];
       const invoiceRows = (faturasReferencia ?? []) as InvoiceReferenceRow[];
       invoicePayments = buildInvoicePaymentDateMap(paymentRows, invoiceRows, cartaoCatIds);
-      const invoiceIds = getPaidInvoiceIds(paymentRows, invoiceRows, cartaoCatIds);
+      const fallbackInvoicePayments = new Map(
+        (faturasReferencia ?? [])
+          .filter((invoice) => {
+            const date = invoice.data_vencimento;
+            return Boolean(date && date >= inicioDia && date <= fimDia);
+          })
+          .map((invoice) => [invoice.id, invoice.data_vencimento as string]),
+      );
+      const invoiceIds = Array.from(new Set([...invoicePayments.keys(), ...fallbackInvoicePayments.keys()]));
 
       if (invoiceIds.length > 0) {
         let iq = supabase
           .from('itens_fatura')
-          .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
+          .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento, status)')
           .eq('usuario_id', user.id)
           .in('fatura_id', invoiceIds);
         if (selectedCats.length < categorias.length) iq = iq.in('categoria_id', selectedCats);
@@ -178,7 +186,7 @@ export default function ComparativoMensal() {
       // Server-side competencia range filter prevents hitting Supabase's 1000-row default limit.
       let iq = supabase
         .from('itens_fatura')
-        .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento)')
+        .select('fatura_id, categoria_id, valor, competencia, data, faturas_cartao(mes_ano, data_vencimento, status)')
         .eq('usuario_id', user.id)
         .gte('competencia', inicioDia)
         .lte('competencia', fimDia);
@@ -190,11 +198,15 @@ export default function ComparativoMensal() {
     itens
       .filter((it) => {
         if (it.categoria_id && cartaoCatIds.has(it.categoria_id)) return false;
+        const invoicePaymentDate =
+          invoicePayments.get(it.fatura_id) ??
+          (it.faturas_cartao?.status === 'quitada' ? it.faturas_cartao?.data_vencimento : null) ??
+          it.data;
 
         return isInvoiceItemWithinRange({
           tipoData,
           competencia: it.faturas_cartao?.mes_ano ?? it.competencia,
-          paymentDate: invoicePayments.get(it.fatura_id),
+          paymentDate: invoicePaymentDate,
           startMonth: dataInicio,
           endMonth: dataFim,
           startDate: inicioDia,
@@ -203,10 +215,14 @@ export default function ComparativoMensal() {
       })
       .forEach((it) => {
       const catNome = it.categoria_id ? catMap[it.categoria_id] ?? 'Sem' : 'Sem';
+      const invoicePaymentDate =
+        invoicePayments.get(it.fatura_id) ??
+        (it.faturas_cartao?.status === 'quitada' ? it.faturas_cartao?.data_vencimento : null) ??
+        it.data;
       const month = resolveInvoiceItemMonth({
         tipoData,
         competencia: it.faturas_cartao?.mes_ano ?? it.competencia,
-        paymentDate: invoicePayments.get(it.fatura_id),
+        paymentDate: invoicePaymentDate,
       });
       if (!month) return;
       addSectionValue(nextReportData.saidas, catNome, month, -it.valor);
