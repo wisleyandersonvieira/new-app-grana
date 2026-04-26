@@ -193,6 +193,40 @@ function detectPageSplitX(pageWidth: number, items: ItauVisualItem[]): number | 
 
   if (leftCount < 6 || rightCount < 6 || rightColumnStarts < 3) return null;
 
+  // Itaú fatura has left column data spanning roughly x=80 to x=335 (date,
+  // description, installment, value) and right column starting at x≈367.
+  // The page midpoint (~297) falls INSIDE the left column, splitting its value
+  // tokens (x≈319-327) into the right column. We must detect the actual gutter
+  // between the two columns by looking for the largest empty horizontal band
+  // around the midpoint, then use its center as the split position.
+  // The gap MUST start to the right of the midpoint to avoid splitting the
+  // left column itself; otherwise we fall back to the midpoint.
+  const searchMin = midpoint;
+  const searchMax = midpoint + 100;
+  const candidateXs = items
+    .map((item) => item.x)
+    .filter((x) => x >= searchMin - 40 && x <= searchMax + 20)
+    .sort((a, b) => a - b);
+
+  let bestGapStart = midpoint;
+  let bestGapEnd = midpoint;
+  for (let i = 1; i < candidateXs.length; i += 1) {
+    const prev = candidateXs[i - 1];
+    const curr = candidateXs[i];
+    if (prev < searchMin - 40 || curr > searchMax + 20) continue;
+    // Require the gap to actually sit in the right half of the page so we
+    // don't split the left column's date/description/value tokens.
+    if (curr < searchMin) continue;
+    if (curr - prev > bestGapEnd - bestGapStart) {
+      bestGapStart = prev;
+      bestGapEnd = curr;
+    }
+  }
+
+  if (bestGapEnd - bestGapStart >= 20 && bestGapEnd > midpoint + 10) {
+    return (bestGapStart + bestGapEnd) / 2;
+  }
+
   return midpoint;
 }
 
