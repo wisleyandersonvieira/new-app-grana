@@ -984,6 +984,63 @@ export type Database = {
           },
         ]
       }
+      security_audit_events: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          event: string
+          id: string
+          ip_hash: string | null
+          metadata: Json
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          event: string
+          id?: string
+          ip_hash?: string | null
+          metadata?: Json
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          event?: string
+          id?: string
+          ip_hash?: string | null
+          metadata?: Json
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      security_rate_limits: {
+        Row: {
+          action: string
+          count: number
+          key: string
+          updated_at: string
+          window_start: string
+        }
+        Insert: {
+          action: string
+          count?: number
+          key: string
+          updated_at?: string
+          window_start?: string
+        }
+        Update: {
+          action?: string
+          count?: number
+          key?: string
+          updated_at?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       subcategorias: {
         Row: {
           bloqueada: boolean | null
@@ -1078,6 +1135,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assert_owned_categoria: {
+        Args: { p_categoria_id: string; p_usuario_id: string }
+        Returns: undefined
+      }
+      assert_owned_conta: {
+        Args: { p_conta_id: string; p_usuario_id: string }
+        Returns: undefined
+      }
+      assert_owned_despesa: {
+        Args: { p_despesa_id: string; p_usuario_id: string }
+        Returns: undefined
+      }
+      assert_owned_fatura: {
+        Args: { p_fatura_id: string; p_usuario_id: string }
+        Returns: undefined
+      }
+      assert_owned_subcategoria: {
+        Args: {
+          p_categoria_id?: string
+          p_subcategoria_id: string
+          p_usuario_id: string
+        }
+        Returns: undefined
+      }
       conta_reference_exists: {
         Args: {
           p_column_name: string
@@ -1087,6 +1168,7 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      try_uuid: { Args: { p_value: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never
