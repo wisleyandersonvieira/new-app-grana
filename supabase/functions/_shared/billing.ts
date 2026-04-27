@@ -256,12 +256,17 @@ export async function syncStripeDataForUser({
   };
 }
 
-export async function requireUser(req: Request, supabase = createServiceClient()) {
+export async function requireUser(req: Request, _supabase?: ReturnType<typeof createServiceClient>) {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) throw new Error("Unauthorized");
 
   const token = authHeader.replace("Bearer ", "");
-  const { data: userData, error } = await supabase.auth.getUser(token);
+  const authClient = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    { global: { headers: { Authorization: authHeader } } },
+  );
+  const { data: userData, error } = await authClient.auth.getUser(token);
   if (error || !userData.user) throw new Error("User not authenticated");
   return userData.user;
 }
