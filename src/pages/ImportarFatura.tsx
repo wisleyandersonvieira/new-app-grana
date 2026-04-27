@@ -14,6 +14,7 @@ import { importInvoicePdfPreview } from '@/lib/fatura-import/service';
 import type { ImportedInvoiceItem, SupportedBank } from '@/lib/fatura-import/types';
 import { ImportInvoiceReviewDialog } from '@/components/ImportInvoiceReviewDialog';
 import { normalizeStatementDescription } from '@/lib/fatura-import/normalization';
+import { validatePdfFile } from '@/lib/security';
 
 type CartaoOption = { id: string; nome: string };
 type CategoriaOption = { id: string; nome: string };
@@ -209,14 +210,16 @@ export default function ImportarFatura() {
     });
   };
 
-  const validateImportInputs = () => {
+  const validateImportInputs = async () => {
     if (!user || !cartaoId || !banco || !vencimento || !competencia || !file) {
       toast.error('Preencha todos os campos obrigatórios.');
       return false;
     }
 
-    if (!file.name.toLowerCase().endsWith('.pdf') || (file.type && file.type !== 'application/pdf')) {
-      toast.error('Envie um arquivo PDF válido.');
+    try {
+      await validatePdfFile(file);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Envie um arquivo PDF válido.');
       return false;
     }
 
@@ -243,7 +246,7 @@ export default function ImportarFatura() {
   };
 
   const handleImport = async () => {
-    if (!validateImportInputs() || !user || !file) return;
+    if (!(await validateImportInputs()) || !user || !file) return;
 
     setLoading(true);
     try {

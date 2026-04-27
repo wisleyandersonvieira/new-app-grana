@@ -11,14 +11,20 @@ export default function Cadastro() {
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({ nome: "", email: "", password: "" });
 
+  const passwordIsStrong =
+    form.password.length >= 10 &&
+    /[a-z]/.test(form.password) &&
+    /[A-Z]/.test(form.password) &&
+    /\d/.test(form.password);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.nome.trim() || !form.email.trim() || !form.password.trim()) {
       toast({ title: "Preencha todos os campos", variant: "destructive" });
       return;
     }
-    if (form.password.length < 6) {
-      toast({ title: "A senha deve ter pelo menos 6 caracteres", variant: "destructive" });
+    if (!passwordIsStrong) {
+      toast({ title: "Use uma senha com 10+ caracteres, letras maiúsculas, minúsculas e números.", variant: "destructive" });
       return;
     }
 
@@ -36,14 +42,14 @@ export default function Cadastro() {
       if (error) throw error;
 
       toast({
-        title: "Conta criada com sucesso! 🎉",
-        description: "Verifique seu e-mail para confirmar o cadastro.",
+        title: "Solicitação recebida",
+        description: "Se o cadastro puder ser concluído, enviaremos as instruções para o e-mail informado.",
       });
       navigate("/login");
-    } catch (err: any) {
+    } catch {
       toast({
-        title: "Erro ao criar conta",
-        description: err.message || "Tente novamente.",
+        title: "Não foi possível concluir agora",
+        description: "Verifique os dados e tente novamente em alguns minutos.",
         variant: "destructive",
       });
     } finally {
@@ -134,7 +140,7 @@ export default function Cadastro() {
                 <div className="relative">
                   <input
                     type={showPassword ? "text" : "password"}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="10+ caracteres, letras e números"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     className="w-full px-4 py-3 pr-11 rounded-xl border border-gray-200 text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3977]/30 focus:border-[#1e3977] transition-all"

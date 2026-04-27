@@ -1,15 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { assertAllowedOrigin, assertRateLimit, getCorsHeaders, requirePost, safeError, writeSecurityEvent } from "../_shared/billing.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: getCorsHeaders(req) });
   }
 
   const supabaseClient = createClient(
@@ -18,6 +14,8 @@ serve(async (req) => {
   );
 
   try {
+    assertAllowedOrigin(req);
+    requirePost(req);
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       throw new Error("Unauthorized");
@@ -28,7 +26,14 @@ serve(async (req) => {
     const user = userData.user;
 
     const { sessionId } = await req.json();
-    if (!sessionId) throw new Error("sessionId is required");
+    if (!sessionId || typeof sessionId !== "string" || !sessionId.startsWith("cs_")) throw new Error("sessionId is required");
+
+    const serviceClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      { auth: { persistSession: false } }
+    );
+    await assertRateLimit(serviceClient, req, "verify-checkout", { limit: 20, windowSeconds: 300, userId: user.id });
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
       apiVersion: "2025-08-27.basil",
@@ -41,6 +46,9 @@ serve(async (req) => {
     if (session.status !== "complete") {
       throw new Error("Checkout session not completed");
     }
+    if (session.customer_details?.email && session.customer_details.email !== user.email) {
+      throw new Error("Forbidden");
+    }
 
     const subscription = session.subscription as Stripe.Subscription;
     if (!subscription) throw new Error("No subscription found");
@@ -48,13 +56,6 @@ serve(async (req) => {
     const priceId = subscription.items.data[0]?.price?.id;
     const plano = priceId === "price_1T91XWGbo9PdwdD38zBjKpDx" ? "mensal" : "anual";
     const periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
-
-    // Update assinaturas using service role
-    const serviceClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { persistSession: false } }
-    );
 
     await serviceClient
       .from("assinaturas")
@@ -68,6 +69,7 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       })
       .eq("usuario_id", user.id);
+    await writeSecurityEvent(serviceClient, req, { event: "checkout_verified", user_id: user.id, actor_id: user.id, metadata: { sessionId } });
 
     return new Response(
       JSON.stringify({
@@ -76,16 +78,15 @@ serve(async (req) => {
         subscription_end: periodEnd,
       }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         status: 200,
       }
     );
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("[VERIFY-CHECKOUT] Error:", errorMessage);
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
+    const { message, status } = safeError(error);
+    return new Response(JSON.stringify({ error: message }), {
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      status,
     });
   }
 });

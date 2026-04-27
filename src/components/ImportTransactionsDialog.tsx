@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { Upload, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -18,6 +17,7 @@ import {
   validateTransactionImportRows,
   parseTransactionImportRows,
 } from '@/lib/import';
+import { validateSpreadsheetFile } from '@/lib/security';
 
 interface ImportTransactionsDialogProps {
   kind: 'receitas' | 'despesas';
@@ -48,6 +48,47 @@ interface ImportPreview {
   }>;
 }
 
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index++;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === ',' && !quoted) {
+      row.push(cell);
+      cell = '';
+    } else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') index++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += char;
+    }
+  }
+
+  row.push(cell);
+  rows.push(row);
+
+  const [headers = [], ...dataRows] = rows.filter((item) => item.some((value) => value.trim()));
+  return dataRows.map((values) =>
+    headers.reduce((record, header, index) => {
+      record[header.trim()] = values[index]?.trim() ?? '';
+      return record;
+    }, {} as Record<string, unknown>),
+  );
+}
+
 export function ImportTransactionsDialog({
   kind,
   userId,
@@ -68,10 +109,8 @@ export function ImportTransactionsDialog({
   async function handleFileSelected(file: File) {
     setLoadingFile(true);
     try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { cellDates: true });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '' });
+      await validateSpreadsheetFile(file);
+      const rawRows = parseCsv(await file.text());
 
       if (rawRows.length === 0) {
         setPreview(null);
@@ -157,7 +196,7 @@ export function ImportTransactionsDialog({
         <DialogHeader>
           <DialogTitle>Importar {isReceita ? 'Receitas' : 'Despesas'}</DialogTitle>
           <DialogDescription>
-            Use uma planilha `xlsx`, `xls` ou `csv` com as colunas `data`, `valor`, `categoria` e `conta`.
+            Use um arquivo `csv` com as colunas `data`, `valor`, `categoria` e `conta`.
             As colunas `subcategoria`, `descricao`, `competencia`, `paga` e `data pagamento` são opcionais.
           </DialogDescription>
         </DialogHeader>
@@ -167,7 +206,7 @@ export function ImportTransactionsDialog({
             ref={inputRef}
             type="file"
             className="hidden"
-            accept=".xlsx,.xls,.csv"
+            accept=".csv,text/csv"
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) void handleFileSelected(file);

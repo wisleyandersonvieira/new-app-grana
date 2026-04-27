@@ -1,4 +1,4 @@
-import { corsHeaders, createServiceClient, createStripeClient, json, requireUser, syncStripeDataForUser } from "../_shared/billing.ts";
+import { assertAllowedOrigin, assertRateLimit, createServiceClient, createStripeClient, getCorsHeaders, json, requireUser, safeError, syncStripeDataForUser } from "../_shared/billing.ts";
 
 const buildResponse = (subscription: Record<string, unknown> | null) => {
   if (!subscription) {
@@ -48,11 +48,13 @@ const buildResponse = (subscription: Record<string, unknown> | null) => {
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: getCorsHeaders(req) });
 
   try {
+    assertAllowedOrigin(req);
     const supabase = createServiceClient();
     const user = await requireUser(req, supabase);
+    await assertRateLimit(supabase, req, "check-subscription", { limit: 120, windowSeconds: 300, userId: user.id });
 
     let { data: subscription } = await supabase
       .from("assinaturas")
@@ -71,7 +73,7 @@ Deno.serve(async (req) => {
         subscribed: true,
         status: "admin_free",
         message: "Acesso liberado para administrador.",
-      });
+      }, 200, req);
     }
 
     if (subscription?.stripe_customer_id || subscription?.stripe_subscription_id || user.email) {
@@ -93,10 +95,9 @@ Deno.serve(async (req) => {
       subscription = refreshed.data;
     }
 
-    return json(buildResponse(subscription as Record<string, unknown> | null));
+    return json(buildResponse(subscription as Record<string, unknown> | null), 200, req);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message === "User not authenticated" || message === "Unauthorized" ? 401 : 500;
-    return json({ error: message }, status);
+    const { message, status } = safeError(error);
+    return json({ error: message }, status, req);
   }
 });

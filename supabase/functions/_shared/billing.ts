@@ -1,17 +1,54 @@
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
-export const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+const allowedOrigins = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+export const securityHeaders = {
+  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  "Cache-Control": "no-store",
 };
 
-export const json = (payload: unknown, status = 200) =>
+export const getCorsHeaders = (req?: Request) => {
+  const origin = req?.headers.get("origin") ?? "";
+  const allowOrigin =
+    allowedOrigins.length === 0
+      ? origin || "http://localhost:5173"
+      : allowedOrigins.includes(origin)
+        ? origin
+        : allowedOrigins[0];
+
+  return {
+    ...securityHeaders,
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  };
+};
+
+export const corsHeaders = getCorsHeaders();
+
+export const json = (payload: unknown, status = 200, req?: Request) =>
   new Response(JSON.stringify(payload), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
   });
+
+export const safeError = (error: unknown, fallback = "Não foi possível concluir a operação.") => {
+  const message = error instanceof Error ? error.message : String(error);
+  if (["Unauthorized", "User not authenticated"].includes(message)) return { message: "Sessão inválida.", status: 401 };
+  if (message === "Forbidden") return { message: "Acesso negado.", status: 403 };
+  if (message === "Rate limit exceeded") return { message: "Muitas tentativas. Tente novamente em alguns minutos.", status: 429 };
+  if (message === "Method not allowed") return { message: "Método não permitido.", status: 405 };
+  return { message: fallback, status: 500 };
+};
 
 export const createServiceClient = () =>
   createClient(
@@ -298,4 +335,78 @@ export async function writeAdminLog(
     acao: payload.acao,
     detalhes: payload.detalhes ?? {},
   });
+}
+
+const getClientIp = (req: Request) =>
+  req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+  req.headers.get("cf-connecting-ip") ||
+  "unknown";
+
+const hashValue = async (value: string) => {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+
+export async function assertRateLimit(
+  supabase: ReturnType<typeof createServiceClient>,
+  req: Request,
+  action: string,
+  options: { limit: number; windowSeconds: number; userId?: string | null },
+) {
+  const ipHash = await hashValue(getClientIp(req));
+  const subject = options.userId ? `user:${options.userId}` : `ip:${ipHash}`;
+  const key = `${action}:${subject}`;
+  const now = new Date();
+  const oldestWindowStart = new Date(now.getTime() - options.windowSeconds * 1000).toISOString();
+
+  const { data } = await supabase
+    .from("security_rate_limits")
+    .select("count, window_start")
+    .eq("key", key)
+    .maybeSingle();
+
+  const shouldReset = !data?.window_start || data.window_start < oldestWindowStart;
+  const nextCount = shouldReset ? 1 : Number(data.count ?? 0) + 1;
+
+  await supabase.from("security_rate_limits").upsert({
+    key,
+    action,
+    window_start: shouldReset ? now.toISOString() : data?.window_start,
+    count: nextCount,
+    updated_at: now.toISOString(),
+  });
+
+  if (nextCount > options.limit) throw new Error("Rate limit exceeded");
+}
+
+export async function writeSecurityEvent(
+  supabase: ReturnType<typeof createServiceClient>,
+  req: Request,
+  payload: {
+    event: string;
+    user_id?: string | null;
+    actor_id?: string | null;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const ipHash = await hashValue(getClientIp(req));
+  await supabase.from("security_audit_events").insert({
+    event: payload.event,
+    user_id: payload.user_id ?? null,
+    actor_id: payload.actor_id ?? null,
+    metadata: payload.metadata ?? {},
+    ip_hash: ipHash,
+    user_agent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
+  });
+}
+
+export function requirePost(req: Request) {
+  if (req.method !== "POST") throw new Error("Method not allowed");
+}
+
+export function assertAllowedOrigin(req: Request) {
+  const origin = req.headers.get("origin") ?? "";
+  if (allowedOrigins.length > 0 && origin && !allowedOrigins.includes(origin)) {
+    throw new Error("Forbidden");
+  }
 }

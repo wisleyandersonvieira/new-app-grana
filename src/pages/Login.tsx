@@ -15,18 +15,27 @@ export default function Login() {
   const [nome, setNome] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const passwordIsStrong =
+    password.length >= 10 &&
+    /[a-z]/.test(password) &&
+    /[A-Z]/.test(password) &&
+    /\d/.test(password);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       if (isSignUp) {
+        if (!passwordIsStrong) {
+          toast.error('Use uma senha com 10+ caracteres, letras maiúsculas, minúsculas e números.');
+          return;
+        }
         const { error } = await supabase.auth.signUp({
           email, password,
           options: { data: { nome }, emailRedirectTo: window.location.origin },
         });
         if (error) throw error;
-        toast.success('Conta criada! Verifique seu email para confirmar.');
+        toast.success('Solicitação recebida. Se o cadastro puder ser concluído, enviaremos instruções por e-mail.');
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -40,8 +49,8 @@ export default function Login() {
         toast.success('Login realizado com sucesso!');
         navigate('/dashboard');
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Erro ao realizar operação');
+    } catch {
+      toast.error(isSignUp ? 'Não foi possível concluir o cadastro agora.' : 'E-mail ou senha inválidos.');
     } finally {
       setLoading(false);
     }
@@ -81,7 +90,7 @@ export default function Login() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={isSignUp ? 10 : 1} />
             </div>
             <Button type="submit" className="w-full h-11 text-sm font-semibold" disabled={loading}>
               {loading ? 'Aguarde...' : isSignUp ? 'Criar conta' : 'Entrar'}

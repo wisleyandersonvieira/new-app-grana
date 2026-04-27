@@ -12,6 +12,7 @@ import { extractPdfText } from '@/lib/fatura-import/pdf-text';
 import { identifyBankFromText, parseStatementText } from '@/lib/fatura-import/service';
 import { debugItauParsing, type ItauDebugResult } from '@/lib/fatura-import/parsers/itau-helpers';
 import type { ParsedStatementItem, SupportedBank } from '@/lib/fatura-import/types';
+import { validatePdfFile } from '@/lib/security';
 
 type DiagnosticState = {
   bank: SupportedBank | null;
@@ -49,13 +50,9 @@ export default function DiagnosticoImportacaoFatura() {
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      toast.error('Envie um arquivo PDF válido.');
-      return;
-    }
-
     setLoading(true);
     try {
+      await validatePdfFile(file);
       const extracted = await extractPdfText(file);
       const extractedText = extracted.text;
       const bank = identifyBankFromText(extractedText);

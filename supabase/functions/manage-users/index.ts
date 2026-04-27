@@ -1,4 +1,4 @@
-import { createServiceClient, createStripeClient, corsHeaders, json, requireAdmin, syncStripeDataForUser, writeAdminLog } from "../_shared/billing.ts";
+import { assertAllowedOrigin, assertRateLimit, createServiceClient, createStripeClient, getCorsHeaders, json, requirePost, requireAdmin, safeError, syncStripeDataForUser, writeAdminLog, writeSecurityEvent } from "../_shared/billing.ts";
 
 type ActionBody = {
   action?: string;
@@ -16,37 +16,56 @@ type ActionBody = {
   force_sync?: boolean;
 };
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const allowedActions = new Set(["create", "update", "delete", "list", "dashboard", "detail", "sync_stripe"]);
+const allowedStatuses = new Set(["active", "inactive", "trial", "blocked"]);
+
+const cleanText = (value: unknown, max = 160) =>
+  typeof value === "string" ? value.trim().slice(0, max) : undefined;
+
+const assertUuid = (value: unknown, field: string) => {
+  if (typeof value !== "string" || !uuidPattern.test(value)) throw new Error(`${field} inválido.`);
+};
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: getCorsHeaders(req) });
 
   try {
+    assertAllowedOrigin(req);
+    requirePost(req);
     const supabaseAdmin = createServiceClient();
     const caller = await requireAdmin(req, supabaseAdmin);
+    await assertRateLimit(supabaseAdmin, req, "manage-users", { limit: 120, windowSeconds: 300, userId: caller.id });
     const body = await req.json() as ActionBody;
     const action = body.action;
+    if (!action || !allowedActions.has(action)) return json({ error: "Ação inválida." }, 400, req);
 
     if (action === "create") {
       const { nome, email, password, is_admin, status, telefone, empresa } = body;
-      if (!nome || !email || !password) return json({ error: "Nome, email e senha são obrigatórios." }, 400);
+      if (!nome || !email || !password) return json({ error: "Nome, email e senha são obrigatórios." }, 400, req);
+      if (!emailPattern.test(email)) return json({ error: "E-mail inválido." }, 400, req);
+      if (password.length < 10) return json({ error: "A senha temporária deve ter pelo menos 10 caracteres." }, 400, req);
+      if (status && !allowedStatuses.has(status)) return json({ error: "Status inválido." }, 400, req);
 
       const { data: newUser, error: createErr } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
-        user_metadata: { nome },
+        user_metadata: { nome: cleanText(nome) },
       });
 
-      if (createErr || !newUser.user) return json({ error: createErr?.message || "Erro ao criar usuário." }, 400);
+      if (createErr || !newUser.user) return json({ error: "Não foi possível criar o usuário." }, 400, req);
 
       const userId = newUser.user.id;
 
       await supabaseAdmin
         .from("profiles")
         .update({
-          nome,
+          nome: cleanText(nome),
           email,
-          telefone: telefone ?? null,
-          empresa: empresa ?? null,
+          telefone: cleanText(telefone, 40) ?? null,
+          empresa: cleanText(empresa, 120) ?? null,
           is_admin: is_admin ?? false,
           role: is_admin ? "admin" : "user",
           status: status ?? "active",
@@ -60,23 +79,27 @@ Deno.serve(async (req) => {
         acao: "user_created",
         detalhes: { nome, email, is_admin: is_admin ?? false },
       });
+      await writeSecurityEvent(supabaseAdmin, req, { event: "admin_user_created", user_id: userId, actor_id: caller.id });
 
-      return json({ success: true, user_id: userId });
+      return json({ success: true, user_id: userId }, 200, req);
     }
 
     if (action === "update") {
       const { user_id, nome, email, is_admin, status, role, access_blocked, telefone, empresa, internal_notes } = body;
-      if (!user_id) return json({ error: "user_id é obrigatório." }, 400);
+      if (!user_id) return json({ error: "user_id é obrigatório." }, 400, req);
+      assertUuid(user_id, "user_id");
+      if (email && !emailPattern.test(email)) return json({ error: "E-mail inválido." }, 400, req);
+      if (status && !allowedStatuses.has(status)) return json({ error: "Status inválido." }, 400, req);
 
       if (email) {
         await supabaseAdmin.auth.admin.updateUserById(user_id, { email });
       }
 
       const updates: Record<string, unknown> = {};
-      if (nome !== undefined) updates.nome = nome;
+      if (nome !== undefined) updates.nome = cleanText(nome);
       if (email !== undefined) updates.email = email;
-      if (telefone !== undefined) updates.telefone = telefone;
-      if (empresa !== undefined) updates.empresa = empresa;
+      if (telefone !== undefined) updates.telefone = cleanText(telefone, 40) ?? null;
+      if (empresa !== undefined) updates.empresa = cleanText(empresa, 120) ?? null;
       if (status !== undefined) updates.status = status;
       if (is_admin !== undefined) {
         updates.is_admin = is_admin;
@@ -84,7 +107,7 @@ Deno.serve(async (req) => {
       }
       if (role !== undefined) updates.role = role;
       if (access_blocked !== undefined) updates.access_blocked = access_blocked;
-      if (internal_notes !== undefined) updates.internal_notes = internal_notes;
+      if (internal_notes !== undefined) updates.internal_notes = cleanText(internal_notes, 2000) ?? null;
 
       if (Object.keys(updates).length > 0) {
         await supabaseAdmin.from("profiles").update(updates).eq("user_id", user_id);
@@ -104,13 +127,16 @@ Deno.serve(async (req) => {
         acao: "user_updated",
         detalhes: updates as Record<string, unknown>,
       });
+      await writeSecurityEvent(supabaseAdmin, req, { event: "admin_user_updated", user_id, actor_id: caller.id });
 
-      return json({ success: true });
+      return json({ success: true }, 200, req);
     }
 
     if (action === "delete") {
       const { user_id } = body;
-      if (!user_id) return json({ error: "user_id é obrigatório." }, 400);
+      if (!user_id) return json({ error: "user_id é obrigatório." }, 400, req);
+      assertUuid(user_id, "user_id");
+      if (user_id === caller.id) return json({ error: "Você não pode excluir seu próprio usuário administrador." }, 400, req);
 
       await supabaseAdmin.from("billing_invoices").delete().eq("user_id", user_id);
       await supabaseAdmin.from("billing_payment_methods").delete().eq("user_id", user_id);
@@ -130,7 +156,9 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from("profiles").delete().eq("user_id", user_id);
       await supabaseAdmin.auth.admin.deleteUser(user_id);
 
-      return json({ success: true });
+      await writeSecurityEvent(supabaseAdmin, req, { event: "admin_user_deleted", user_id, actor_id: caller.id });
+
+      return json({ success: true }, 200, req);
     }
 
     if (action === "list" || action === "dashboard") {
@@ -181,15 +209,16 @@ Deno.serve(async (req) => {
           canceledUsers: rows.filter((row) => row.subscription_status === "canceled").length,
           monthlyRecurringRevenue: mrr,
           newUsersLast30Days: rows.filter((row) => row.created_at && new Date(row.created_at).getTime() >= thirtyDaysAgo).length,
-        });
+        }, 200, req);
       }
 
-      return json(rows);
+      return json(rows, 200, req);
     }
 
     if (action === "detail") {
       const { user_id, force_sync } = body;
-      if (!user_id) return json({ error: "user_id é obrigatório." }, 400);
+      if (!user_id) return json({ error: "user_id é obrigatório." }, 400, req);
+      assertUuid(user_id, "user_id");
 
       const [{ data: profile }, { data: subscription }, { data: logs }, authUser] = await Promise.all([
         supabaseAdmin.from("profiles").select("*").eq("user_id", user_id).single(),
@@ -198,7 +227,7 @@ Deno.serve(async (req) => {
         supabaseAdmin.auth.admin.getUserById(user_id),
       ]);
 
-      if (!profile) return json({ error: "Usuário não encontrado." }, 404);
+      if (!profile) return json({ error: "Usuário não encontrado." }, 404, req);
 
       let syncedSubscription = subscription;
       if (force_sync || subscription?.stripe_customer_id || subscription?.stripe_subscription_id) {
@@ -254,12 +283,13 @@ Deno.serve(async (req) => {
         invoices: invoices ?? [],
         paymentMethods: paymentMethods ?? [],
         logs: logs ?? [],
-      });
+      }, 200, req);
     }
 
     if (action === "sync_stripe") {
       const { user_id } = body;
-      if (!user_id) return json({ error: "user_id é obrigatório." }, 400);
+      if (!user_id) return json({ error: "user_id é obrigatório." }, 400, req);
+      assertUuid(user_id, "user_id");
 
       const [{ data: profile }, { data: subscription }, authUser] = await Promise.all([
         supabaseAdmin.from("profiles").select("email").eq("user_id", user_id).single(),
@@ -287,11 +317,12 @@ Deno.serve(async (req) => {
         },
       });
 
-      return json({ success: true });
+      return json({ success: true }, 200, req);
     }
 
-    return json({ error: "Invalid action" }, 400);
+    return json({ error: "Ação inválida." }, 400, req);
   } catch (err) {
-    return json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    const { message, status } = safeError(err);
+    return json({ error: message }, status, req);
   }
 });

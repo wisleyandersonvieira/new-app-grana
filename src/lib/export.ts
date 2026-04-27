@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatCurrency } from './financial';
@@ -12,52 +11,53 @@ interface ExportColumn {
   width?: number;
 }
 
+const sanitizeFilename = (filename: string) =>
+  filename
+    .normalize('NFKD')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'exportacao';
+
+const sanitizeCell = (value: unknown) => {
+  if (value == null) return '';
+  if (typeof value !== 'string') return value;
+  const clean = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').slice(0, 5000);
+  return /^[=+\-@\t\r]/.test(clean) ? `'${clean}` : clean;
+};
+
+const csvEscape = (value: unknown) => {
+  const clean = String(sanitizeCell(value));
+  return `"${clean.replace(/"/g, '""')}"`;
+};
+
+const downloadTextFile = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
 // ─── EXCEL ────────────────────────────────────────────────────────
 export function exportToExcel(
   data: Record<string, any>[],
   columns: ExportColumn[],
   filename: string
 ) {
+  const header = columns.map((col) => csvEscape(col.header)).join(',');
   const rows = data.map((row) =>
-    columns.reduce((acc, col) => {
+    columns.map((col) => {
       const val = row[col.key];
-      if (col.currency && typeof val === 'number') {
-        acc[col.header] = formatCurrency(val);
-      } else {
-        acc[col.header] = val ?? '';
-      }
-      return acc;
-    }, {} as Record<string, any>)
+      return csvEscape(col.currency && typeof val === 'number' ? formatCurrency(val) : val);
+    }).join(',')
   );
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-
-  // Auto-width: measure header and data widths
-  const colWidths = columns.map((col, i) => {
-    let max = col.header.length;
-    rows.forEach((r) => {
-      const cell = String(r[col.header] ?? '');
-      if (cell.length > max) max = cell.length;
-    });
-    return { wch: Math.min(Math.max(max + 2, col.width ?? 10), 50) };
-  });
-  ws['!cols'] = colWidths;
-
-  // Bold header row — set style on first row cells
-  columns.forEach((_, i) => {
-    const cellRef = XLSX.utils.encode_cell({ r: 0, c: i });
-    if (ws[cellRef]) {
-      ws[cellRef].s = {
-        font: { bold: true },
-        fill: { fgColor: { rgb: '1E3977' } },
-        color: { rgb: 'FFFFFF' },
-      };
-    }
-  });
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Dados');
-  XLSX.writeFile(wb, `${filename}.xlsx`);
+  downloadTextFile(`\uFEFF${[header, ...rows].join('\n')}`, `${sanitizeFilename(filename)}.csv`, 'text/csv;charset=utf-8');
 }
 
 /**
@@ -67,37 +67,18 @@ export function exportToExcelMultiSheet(
   sheets: { name: string; data: Record<string, any>[]; columns: ExportColumn[] }[],
   filename: string
 ) {
-  const wb = XLSX.utils.book_new();
-
-  sheets.forEach(({ name, data, columns }) => {
+  const content = sheets.flatMap(({ name, data, columns }) => {
+    const header = columns.map((col) => csvEscape(col.header)).join(',');
     const rows = data.map((row) =>
-      columns.reduce((acc, col) => {
+      columns.map((col) => {
         const val = row[col.key];
-        if (col.currency && typeof val === 'number') {
-          acc[col.header] = formatCurrency(val);
-        } else {
-          acc[col.header] = val ?? '';
-        }
-        return acc;
-      }, {} as Record<string, any>)
+        return csvEscape(col.currency && typeof val === 'number' ? formatCurrency(val) : val);
+      }).join(',')
     );
+    return [`# ${sanitizeCell(name)}`, header, ...rows, ''];
+  }).join('\n');
 
-    const ws = XLSX.utils.json_to_sheet(rows);
-
-    const colWidths = columns.map((col) => {
-      let max = col.header.length;
-      rows.forEach((r) => {
-        const cell = String(r[col.header] ?? '');
-        if (cell.length > max) max = cell.length;
-      });
-      return { wch: Math.min(Math.max(max + 2, col.width ?? 10), 50) };
-    });
-    ws['!cols'] = colWidths;
-
-    XLSX.utils.book_append_sheet(wb, ws, name.substring(0, 31));
-  });
-
-  XLSX.writeFile(wb, `${filename}.xlsx`);
+  downloadTextFile(`\uFEFF${content}`, `${sanitizeFilename(filename)}.csv`, 'text/csv;charset=utf-8');
 }
 
 // ─── PDF ──────────────────────────────────────────────────────────
@@ -142,7 +123,7 @@ export function exportToPDF(
     columns.map((col) => {
       const val = row[col.key];
       if (col.currency && typeof val === 'number') return formatCurrency(val);
-      return val ?? '';
+      return sanitizeCell(val);
     })
   );
 
@@ -183,5 +164,5 @@ export function exportToPDF(
     },
   });
 
-  doc.save(`${filename}.pdf`);
+  doc.save(`${sanitizeFilename(filename)}.pdf`);
 }

@@ -1,11 +1,14 @@
-import { corsHeaders, createServiceClient, createStripeClient, json, requireUser, syncStripeDataForUser } from "../_shared/billing.ts";
+import { assertAllowedOrigin, assertRateLimit, createServiceClient, createStripeClient, getCorsHeaders, json, requirePost, requireUser, safeError, syncStripeDataForUser, writeSecurityEvent } from "../_shared/billing.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: getCorsHeaders(req) });
 
   try {
+    assertAllowedOrigin(req);
+    requirePost(req);
     const supabase = createServiceClient();
     const user = await requireUser(req, supabase);
+    await assertRateLimit(supabase, req, "resume-subscription", { limit: 5, windowSeconds: 300, userId: user.id });
 
     const { data: subscription } = await supabase
       .from("assinaturas")
@@ -14,7 +17,7 @@ Deno.serve(async (req) => {
       .single();
 
     if (!subscription?.stripe_subscription_id) {
-      return json({ error: "Nenhuma assinatura Stripe encontrada para reativar." }, 400);
+      return json({ error: "Nenhuma assinatura Stripe encontrada para reativar." }, 400, req);
     }
 
     const stripe = createStripeClient();
@@ -31,8 +34,11 @@ Deno.serve(async (req) => {
       stripeSubscriptionId: subscription.stripe_subscription_id,
     });
 
-    return json({ success: true });
+    await writeSecurityEvent(supabase, req, { event: "subscription_resume_requested", user_id: user.id, actor_id: user.id });
+
+    return json({ success: true }, 200, req);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    const { message, status } = safeError(error);
+    return json({ error: message }, status, req);
   }
 });

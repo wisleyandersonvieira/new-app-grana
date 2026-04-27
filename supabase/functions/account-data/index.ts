@@ -1,11 +1,13 @@
-import { corsHeaders, createServiceClient, createStripeClient, json, requireUser, syncStripeDataForUser } from "../_shared/billing.ts";
+import { assertAllowedOrigin, assertRateLimit, createServiceClient, createStripeClient, getCorsHeaders, json, requireUser, safeError, syncStripeDataForUser, writeSecurityEvent } from "../_shared/billing.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: getCorsHeaders(req) });
 
   try {
+    assertAllowedOrigin(req);
     const supabase = createServiceClient();
     const user = await requireUser(req, supabase);
+    await assertRateLimit(supabase, req, "account-data", { limit: 60, windowSeconds: 300, userId: user.id });
 
     const [{ data: profile }, { data: subscription }] = await Promise.all([
       supabase.from("profiles").select("*").eq("user_id", user.id).single(),
@@ -34,6 +36,8 @@ Deno.serve(async (req) => {
       supabase.from("admin_user_logs").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20),
     ]);
 
+    await writeSecurityEvent(supabase, req, { event: "account_data_viewed", user_id: user.id, actor_id: user.id });
+
     return json({
       profile: {
         ...profile,
@@ -47,8 +51,9 @@ Deno.serve(async (req) => {
       invoices: invoices ?? [],
       paymentMethods: paymentMethods ?? [],
       logs: logs ?? [],
-    });
+    }, 200, req);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    const { message, status } = safeError(error);
+    return json({ error: message }, status, req);
   }
 });

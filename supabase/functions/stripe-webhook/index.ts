@@ -41,8 +41,8 @@ Deno.serve(async (req) => {
   try {
     event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return new Response(`Webhook Error: ${msg}`, { status: 400 });
+    console.error("[STRIPE-WEBHOOK] Invalid signature:", err instanceof Error ? err.message : String(err));
+    return new Response("Webhook signature verification failed", { status: 400 });
   }
 
   const supabase = createServiceClient();
@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     logStep("Processing error", { error: msg, type: event.type });
-    return json({ received: true, error: msg });
+    return json({ received: true });
   }
 
   return json({ received: true });
