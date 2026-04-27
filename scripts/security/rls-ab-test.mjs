@@ -52,6 +52,15 @@ const users = [];
 const createdRows = [];
 const results = [];
 
+const defaultCategories = new Map([
+  ['ALIMENTAÇÃO', ['IFOOD', 'RESTAURANTE', 'MERCADO']],
+  ['DESPESAS FIXAS', ['ALUGUEL', 'CONDOMÍNIO', 'ESCOLA', 'ENERGIA', 'PLANO DE SAÚDE']],
+  ['TRANSPORTE', ['COMBUSTÍVEL', 'UBER', 'SEGURO VEICULAR', 'IMPOSTOS', 'MANUTENÇÃO']],
+  ['SAÚDE', ['CONSULTAS', 'FARMÁCIA', 'NUTRICIONISTA', 'VACINAS', 'DERMATOLOGISTA']],
+  ['DIVERSOS', ['TAXAS', 'JUROS', 'EXTRAS']],
+  ['RECEITAS', ['SALÁRIO', 'PRÓ LABORE', 'RECEITAS DIVERSAS']],
+]);
+
 function mark(name, expected, passed, details = '') {
   results.push({ name, expected, passed, details });
   const status = passed ? 'PASS' : 'FAIL';
@@ -127,9 +136,55 @@ async function expectAccepted(name, action) {
   mark(name, 'operacao aceita', !error, error?.message || data?.id || 'ok');
 }
 
+async function expectDefaultCategories(user) {
+  const { data, error } = await user.client
+    .from('categorias')
+    .select('nome, categoria_padrao, subcategorias(nome, subcategoria_padrao)')
+    .eq('usuario_id', user.id)
+    .in('nome', [...defaultCategories.keys()]);
+
+  if (error) {
+    mark('onboarding: cria categorias padrao para novo usuario', '6 categorias e 26 subcategorias', false, error.message);
+    return;
+  }
+
+  const categoryMap = new Map((data ?? []).map((category) => [category.nome, category]));
+  const missing = [];
+
+  for (const [categoryName, expectedSubcategories] of defaultCategories) {
+    const category = categoryMap.get(categoryName);
+    if (!category?.categoria_padrao) {
+      missing.push(categoryName);
+      continue;
+    }
+
+    const actualSubcategories = new Set(
+      (category.subcategorias ?? [])
+        .filter((subcategory) => subcategory.subcategoria_padrao)
+        .map((subcategory) => subcategory.nome),
+    );
+
+    for (const subcategoryName of expectedSubcategories) {
+      if (!actualSubcategories.has(subcategoryName)) {
+        missing.push(`${categoryName} > ${subcategoryName}`);
+      }
+    }
+  }
+
+  mark(
+    'onboarding: cria categorias padrao para novo usuario',
+    '6 categorias e 26 subcategorias',
+    missing.length === 0,
+    missing.length === 0 ? 'ok' : `faltando: ${missing.join(', ')}`,
+  );
+}
+
 async function main() {
   const userA = await createUser('user-a');
   const userB = await createUser('user-b');
+
+  await expectDefaultCategories(userA);
+  await expectDefaultCategories(userB);
 
   const contaA = await insertOwned(userA.client, 'contas', {
     usuario_id: userA.id,
