@@ -442,11 +442,7 @@ export default function Dashboard() {
     const loadDashboardData = async () => {
       setLoading(true);
 
-      if (competencia === getCurrentCompetencia() && dashboardCache.has(competencia)) {
-        setDashboard(dashboardCache.get(competencia) ?? null);
-        setLoading(false);
-        return;
-      }
+
 
       const [{ data: contas }, { data: receitasPagas }, { data: despesasPagas }, { data: transferencias }, { data: metasData }] =
         await Promise.all([
