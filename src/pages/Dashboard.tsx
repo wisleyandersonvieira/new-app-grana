@@ -30,13 +30,26 @@ import {
   getMonthName,
   offsetCompetencia,
 } from '@/lib/financial';
+import { isCreditCardCategoryName } from '@/lib/credit-card-category';
 
 type EntryRow = {
   valor: number;
   conta_id?: string | null;
   data_pagamento?: string | null;
+  competencia?: string | null;
   categoria_id?: string | null;
   categorias?: { nome?: string | null } | null;
+};
+
+type CategoryRow = {
+  id: string;
+  nome: string;
+};
+
+type InvoiceItemRow = {
+  valor: number;
+  categoria_id: string | null;
+  competencia: string | null;
 };
 
 type TransferRow = {
@@ -133,6 +146,9 @@ const formatPercent = (value: number) =>
 
 const getCategoryName = (row: EntryRow) => row.categorias?.nome?.trim() || 'Sem categoria';
 
+const getCategoryNameById = (categoryId: string | null | undefined, categoryMap: Map<string, string>) =>
+  (categoryId ? categoryMap.get(categoryId)?.trim() : '') || 'Sem categoria';
+
 const aggregateByCategory = (currentRows: EntryRow[], previousRows: EntryRow[]) => {
   const previousMap = new Map<string, number>();
   previousRows.forEach((row) => {
@@ -145,6 +161,56 @@ const aggregateByCategory = (currentRows: EntryRow[], previousRows: EntryRow[]) 
     const name = getCategoryName(row);
     currentMap.set(name, (currentMap.get(name) ?? 0) + row.valor);
   });
+
+  const total = Array.from(currentMap.values()).reduce((sum, value) => sum + value, 0);
+
+  return Array.from(currentMap.entries())
+    .map(([nome, value]) => {
+      const previous = previousMap.get(nome) ?? 0;
+      const variation = getVariation(value, previous);
+      return {
+        nome,
+        total: value,
+        percent: total > 0 ? (value / total) * 100 : 0,
+        diff: variation.diff,
+        diffPct: variation.pct,
+      };
+    })
+    .sort((left, right) => right.total - left.total)
+    .slice(0, 5);
+};
+
+const aggregateExpenseCategories = (
+  currentExpenses: EntryRow[],
+  previousExpenses: EntryRow[],
+  currentInvoiceItems: InvoiceItemRow[],
+  previousInvoiceItems: InvoiceItemRow[],
+  categoryMap: Map<string, string>,
+  creditCardCategoryIds: Set<string>,
+) => {
+  const addExpenseRows = (target: Map<string, number>, rows: EntryRow[]) => {
+    rows.forEach((row) => {
+      if (row.categoria_id && creditCardCategoryIds.has(row.categoria_id)) return;
+      const name = getCategoryName(row);
+      target.set(name, (target.get(name) ?? 0) + row.valor);
+    });
+  };
+
+  const addInvoiceItems = (target: Map<string, number>, rows: InvoiceItemRow[]) => {
+    rows.forEach((row) => {
+      if (row.categoria_id && creditCardCategoryIds.has(row.categoria_id)) return;
+      const name = getCategoryNameById(row.categoria_id, categoryMap);
+      target.set(name, (target.get(name) ?? 0) + row.valor);
+    });
+  };
+
+  const previousMap = new Map<string, number>();
+  const currentMap = new Map<string, number>();
+
+  addExpenseRows(previousMap, previousExpenses);
+  addInvoiceItems(previousMap, previousInvoiceItems);
+  addExpenseRows(currentMap, currentExpenses);
+  addInvoiceItems(currentMap, currentInvoiceItems);
 
   const total = Array.from(currentMap.values()).reduce((sum, value) => sum + value, 0);
 
@@ -212,10 +278,8 @@ const buildMetas = (
   metasData: any[],
   receitasMes: number,
   despesasMes: number,
-  despesasPorCategoria: CategoryInsight[],
+  despesasPorCategoriaId: Map<string, number>,
 ) => {
-  const categoriasMap = new Map(despesasPorCategoria.map((item) => [item.nome, item.total]));
-
   return metasData.map((meta) => {
     let valorRealizado = 0;
     let label = 'Meta';
@@ -227,11 +291,11 @@ const buildMetas = (
       valorRealizado = despesasMes;
       label = 'Meta de despesa';
     } else if (meta.tipo === 'categoria') {
-      valorRealizado = categoriasMap.get(meta.categorias?.nome || '') ?? 0;
+      valorRealizado = despesasPorCategoriaId.get(meta.categoria_id) ?? 0;
       label = `Categoria: ${meta.categorias?.nome || 'Sem categoria'}`;
     }
 
-    const pct = meta.valor > 0 ? (valorRealizado / meta.valor) * 100 : 0;
+    const pct = meta.valor > 0 ? Math.min((valorRealizado / meta.valor) * 100, 100) : 0;
     const tone = pct <= 80 ? 'success' : pct <= 100 ? 'warning' : 'destructive';
 
     return {
@@ -444,7 +508,21 @@ export default function Dashboard() {
 
 
 
-      const [{ data: contas }, { data: receitasPagas }, { data: despesasPagas }, { data: transferencias }, { data: metasData }] =
+      const compEnd = `${competencia}-31`;
+      const previousCompStart = `${previousCompetencia}-01`;
+
+      const [
+        { data: contas },
+        { data: categoriasData },
+        { data: receitasPagas },
+        { data: despesasPagas },
+        { data: despesasCategoriaData },
+        { data: metasReceitas },
+        { data: metasDespesas },
+        { data: itensFatura },
+        { data: transferencias },
+        { data: metasData },
+      ] =
         await Promise.all([
           supabase
             .from('contas')
@@ -453,19 +531,47 @@ export default function Dashboard() {
             .eq('tipo', 'conta')
             .eq('bloqueada', false),
           supabase
+            .from('categorias')
+            .select('id, nome')
+            .eq('usuario_id', user.id),
+          supabase
             .from('receitas')
-            .select('valor, conta_id, data_pagamento, categoria_id, categorias(nome)')
+            .select('valor, conta_id, data_pagamento, competencia, categoria_id, categorias(nome)')
             .eq('usuario_id', user.id)
             .eq('paga', true)
             .not('data_pagamento', 'is', null)
             .lte('data_pagamento', currentRange.end),
           supabase
             .from('despesas')
-            .select('valor, conta_id, data_pagamento, categoria_id, categorias(nome)')
+            .select('valor, conta_id, data_pagamento, competencia, categoria_id, categorias(nome)')
             .eq('usuario_id', user.id)
             .eq('paga', true)
             .not('data_pagamento', 'is', null)
             .lte('data_pagamento', currentRange.end),
+          supabase
+            .from('despesas')
+            .select('valor, competencia, categoria_id, categorias(nome)')
+            .eq('usuario_id', user.id)
+            .gte('competencia', previousCompetencia)
+            .lte('competencia', competencia),
+          supabase
+            .from('receitas')
+            .select('valor, paga')
+            .eq('usuario_id', user.id)
+            .eq('competencia', competencia)
+            .eq('paga', true),
+          supabase
+            .from('despesas')
+            .select('valor, paga, categoria_id')
+            .eq('usuario_id', user.id)
+            .eq('competencia', competencia)
+            .eq('paga', true),
+          supabase
+            .from('itens_fatura')
+            .select('valor, categoria_id, competencia')
+            .eq('usuario_id', user.id)
+            .gte('competencia', previousCompStart)
+            .lte('competencia', compEnd),
           supabase
             .from('transferencias')
             .select('conta_origem_id, conta_destino_id, valor, data')
@@ -481,9 +587,20 @@ export default function Dashboard() {
       if (!active) return;
 
       const contasAtivas = (contas ?? []) as ContaRow[];
+      const categorias = (categoriasData ?? []) as CategoryRow[];
       const receitasRows = (receitasPagas ?? []) as EntryRow[];
       const despesasRows = (despesasPagas ?? []) as EntryRow[];
+      const despesasCategoriaRows = (despesasCategoriaData ?? []) as EntryRow[];
+      const metasReceitasRows = (metasReceitas ?? []) as Array<{ valor: number }>;
+      const metasDespesasRows = (metasDespesas ?? []) as Array<{ valor: number; categoria_id?: string | null }>;
+      const itensFaturaRows = (itensFatura ?? []) as InvoiceItemRow[];
       const transferRows = (transferencias ?? []) as TransferRow[];
+      const categoryMap = new Map(categorias.map((categoria) => [categoria.id, categoria.nome]));
+      const creditCardCategoryIds = new Set(
+        categorias
+          .filter((categoria) => isCreditCardCategoryName(categoria.nome))
+          .map((categoria) => categoria.id),
+      );
 
       const receitasMesRows = receitasRows.filter((row) =>
         inDateRange(row.data_pagamento, currentRange.start, currentRange.end),
@@ -497,6 +614,10 @@ export default function Dashboard() {
       const despesasMesAnteriorRows = despesasRows.filter((row) =>
         inDateRange(row.data_pagamento, previousRange.start, previousRange.end),
       );
+      const despesasCategoriaMesRows = despesasCategoriaRows.filter((row) => row.competencia === competencia);
+      const despesasCategoriaMesAnteriorRows = despesasCategoriaRows.filter((row) => row.competencia === previousCompetencia);
+      const itensFaturaMesRows = itensFaturaRows.filter((row) => row.competencia?.startsWith(competencia));
+      const itensFaturaMesAnteriorRows = itensFaturaRows.filter((row) => row.competencia?.startsWith(previousCompetencia));
 
       const receitasMes = sumValues(receitasMesRows);
       const despesasMes = sumValues(despesasMesRows);
@@ -546,10 +667,28 @@ export default function Dashboard() {
       });
 
       const topReceitas = aggregateByCategory(receitasMesRows, receitasMesAnteriorRows);
-      const topDespesas = aggregateByCategory(despesasMesRows, despesasMesAnteriorRows);
+      const topDespesas = aggregateExpenseCategories(
+        despesasCategoriaMesRows,
+        despesasCategoriaMesAnteriorRows,
+        itensFaturaMesRows,
+        itensFaturaMesAnteriorRows,
+        categoryMap,
+        creditCardCategoryIds,
+      );
       const dailySeries = buildDailySeries(currentRange.start, currentRange.end, receitasMesRows, despesasMesRows);
       const monthlySeries = buildMonthlySeries(competencia, receitasRows, despesasRows);
-      const metas = buildMetas(metasData ?? [], receitasMes, despesasMes, topDespesas);
+      const metasCategoryTotals = new Map<string, number>();
+      metasDespesasRows.forEach((row) => {
+        if (row.categoria_id && creditCardCategoryIds.has(row.categoria_id)) return;
+        if (row.categoria_id) metasCategoryTotals.set(row.categoria_id, (metasCategoryTotals.get(row.categoria_id) ?? 0) + row.valor);
+      });
+      itensFaturaMesRows.forEach((row) => {
+        if (row.categoria_id && creditCardCategoryIds.has(row.categoria_id)) return;
+        if (row.categoria_id) metasCategoryTotals.set(row.categoria_id, (metasCategoryTotals.get(row.categoria_id) ?? 0) + row.valor);
+      });
+      const metasReceitasMes = sumValues(metasReceitasRows);
+      const metasDespesasMes = sumValues(metasDespesasRows);
+      const metas = buildMetas(metasData ?? [], metasReceitasMes, metasDespesasMes, metasCategoryTotals);
       const alerts = buildAlerts(
         receitasMes,
         despesasMes,
