@@ -1075,6 +1075,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      conta_reference_exists: {
+        Args: {
+          p_column_name: string
+          p_conta_id: string
+          p_table_name: string
+        }
+        Returns: boolean
+      }
       is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
