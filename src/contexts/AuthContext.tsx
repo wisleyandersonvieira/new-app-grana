@@ -14,6 +14,7 @@ interface Profile {
   status: string | null;
   access_blocked?: boolean | null;
   internal_notes?: string | null;
+  onboarding_completed?: boolean | null;
   ultimo_acesso: string | null;
   last_login_at?: string | null;
   created_at: string | null;
@@ -41,6 +42,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   refreshSubscription: () => Promise<void>;
+  completeOnboarding: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -51,6 +53,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signOut: async () => {},
   refreshSubscription: async () => {},
+  completeOnboarding: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -152,8 +155,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSubscription(null);
   };
 
+  const completeOnboarding = async () => {
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ onboarding_completed: true })
+      .eq('user_id', user.id);
+
+    if (!error) {
+      setProfile((current) => current ? { ...current, onboarding_completed: true } : current);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user, profile, subscription, loading, signOut, refreshSubscription: checkSubscription }}>
+    <AuthContext.Provider value={{ session, user, profile, subscription, loading, signOut, refreshSubscription: checkSubscription, completeOnboarding }}>
       {children}
     </AuthContext.Provider>
   );

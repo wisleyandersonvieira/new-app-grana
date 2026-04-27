@@ -859,6 +859,7 @@ export type Database = {
           is_admin: boolean | null
           last_login_at: string | null
           nome: string | null
+          onboarding_completed: boolean | null
           role: string
           status: string | null
           telefone: string | null
@@ -876,6 +877,7 @@ export type Database = {
           is_admin?: boolean | null
           last_login_at?: string | null
           nome?: string | null
+          onboarding_completed?: boolean | null
           role?: string
           status?: string | null
           telefone?: string | null
@@ -893,6 +895,7 @@ export type Database = {
           is_admin?: boolean | null
           last_login_at?: string | null
           nome?: string | null
+          onboarding_completed?: boolean | null
           role?: string
           status?: string | null
           telefone?: string | null

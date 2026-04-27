@@ -41,6 +41,7 @@ import Planos from "./pages/Planos";
 import PlanosSucesso from "./pages/PlanosSucesso";
 import MinhaAssinatura from "./pages/MinhaAssinatura";
 import MinhaConta from "./pages/MinhaConta";
+import Ajuda from "./pages/Ajuda";
 import AdminConsole from "./pages/AdminConsole";
 import NotFound from "./pages/NotFound";
 
@@ -96,6 +97,7 @@ const App = () => (
                       <Route path="/planos/sucesso" element={<PlanosSucesso />} />
                       <Route path="/minha-assinatura" element={<MinhaAssinatura />} />
                       <Route path="/minha-conta" element={<MinhaConta />} />
+                      <Route path="/ajuda" element={<Ajuda />} />
                       <Route path="/admin/dashboard" element={<AdminRoute><AdminConsole /></AdminRoute>} />
                       <Route path="/admin/usuarios" element={<AdminRoute><AdminConsole /></AdminRoute>} />
                       <Route path="/admin/assinaturas" element={<AdminRoute><AdminConsole /></AdminRoute>} />

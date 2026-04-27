@@ -157,6 +157,11 @@
     opacity: 1;
   }
 
+  .tour-menu-highlight {
+    @apply relative ring-2 ring-sidebar-primary ring-offset-2 ring-offset-sidebar;
+    box-shadow: 0 0 0 6px hsl(var(--sidebar-primary) / 0.12), 0 10px 28px hsl(var(--sidebar-primary) / 0.22);
+  }
+
   .listing-filter-card {
     @apply rounded-2xl border bg-card p-5;
     box-shadow: var(--card-shadow);

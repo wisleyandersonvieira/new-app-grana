@@ -4,7 +4,7 @@ import {
   CreditCard, ArrowLeftRight, LogOut, DollarSign, ChevronRight,
   PlusCircle, List, BarChart3, FileText, ClipboardList, Users,
   CalendarOff, Layers, Settings, Receipt, Shield, ScrollText, UserCog,
-  Sparkles, UserCircle2, X,
+  Sparkles, UserCircle2, X, HelpCircle,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -21,12 +21,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 interface SubItem { title: string; url: string; icon: React.ElementType; }
-interface MenuItem { title: string; icon: React.ElementType; url?: string; children?: SubItem[]; adminOnly?: boolean; }
+interface MenuItem { title: string; icon: React.ElementType; url?: string; children?: SubItem[]; adminOnly?: boolean; tourKey?: string; }
 
 const menuItems: MenuItem[] = [
-  { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
+  { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard', tourKey: 'dashboard' },
   {
-    title: 'Lançamentos', icon: Receipt,
+    title: 'Lançamentos', icon: Receipt, tourKey: 'lancamentos',
     children: [
       { title: 'Nova Despesa', url: '/nova-despesa', icon: PlusCircle },
       { title: 'Nova Receita', url: '/nova-receita', icon: PlusCircle },
@@ -35,7 +35,7 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
-    title: 'Cartão de Crédito', icon: CreditCard,
+    title: 'Cartão de Crédito', icon: CreditCard, tourKey: 'cartao-credito',
     children: [
       { title: 'Nova Fatura', url: '/nova-fatura', icon: PlusCircle },
       { title: 'Importar Fatura', url: '/importar-fatura', icon: Sparkles },
@@ -43,14 +43,14 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
-    title: 'Transferências', icon: ArrowLeftRight,
+    title: 'Transferências', icon: ArrowLeftRight, tourKey: 'transferencias',
     children: [
       { title: 'Nova Transferência', url: '/nova-transferencia', icon: PlusCircle },
       { title: 'Transferências', url: '/transferencias', icon: List },
     ],
   },
   {
-    title: 'Relatórios', icon: BarChart3,
+    title: 'Relatórios', icon: BarChart3, tourKey: 'relatorios',
     children: [
       { title: 'Relatório de Contas', url: '/relatorios/contas', icon: FileText },
       { title: 'Detalhado', url: '/relatorios/detalhado', icon: FileText },
@@ -61,14 +61,14 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
-    title: 'Metas', icon: Target,
+    title: 'Metas', icon: Target, tourKey: 'metas',
     children: [
       { title: 'Cadastrar Metas', url: '/cadastrar-metas', icon: PlusCircle },
       { title: 'Acompanhar Metas', url: '/metas', icon: Target },
     ],
   },
   {
-    title: 'Cadastros', icon: Layers,
+    title: 'Cadastros', icon: Layers, tourKey: 'cadastros',
     children: [
       { title: 'Categorias', url: '/categorias', icon: Tags },
       { title: 'Subcategorias', url: '/subcategorias', icon: Tags },
@@ -76,11 +76,12 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
-    title: 'Configurações', icon: Settings,
+    title: 'Configurações', icon: Settings, tourKey: 'configuracoes',
     children: [
       { title: 'Minha Assinatura', url: '/minha-assinatura', icon: CreditCard },
       { title: 'Minha Conta', url: '/minha-conta', icon: UserCircle2 },
       { title: 'Bloqueio de Datas', url: '/bloqueios', icon: CalendarOff },
+      { title: 'Ajuda', url: '/ajuda', icon: HelpCircle },
     ],
   },
   {
@@ -166,6 +167,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
                       : 'text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground'
                   )}
                   activeClassName=""
+                  data-tour={item.tourKey}
                 >
                   <item.icon className={cn(
                     'h-[18px] w-[18px] shrink-0 transition-colors md:h-[17px] md:w-[17px]',
@@ -183,6 +185,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
               <div key={item.title}>
                 <button
                   onClick={() => toggleMenu(item.title)}
+                  data-tour={item.tourKey}
                   className={cn(
                     'group flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-150 md:rounded-lg md:px-3 md:py-2.5 md:text-[13px]',
                     hasActiveChild

@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { AppSidebar } from '@/components/AppSidebar';
+import { OnboardingTutorial } from '@/components/OnboardingTutorial';
 import { TrialBanner } from '@/components/TrialBanner';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ const pageTitles: Record<string, string> = {
   '/planos': 'Planos',
   '/minha-assinatura': 'Assinatura',
   '/minha-conta': 'Minha Conta',
+  '/ajuda': 'Central de Ajuda',
   '/admin/dashboard': 'Administração',
   '/admin/usuarios': 'Usuários',
   '/admin/assinaturas': 'Assinaturas',
@@ -47,9 +49,11 @@ function getPageTitle(pathname: string) {
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { subscription } = useAuth();
+  const { profile, subscription, loading, completeOnboarding } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [autoOnboardingHandledFor, setAutoOnboardingHandledFor] = useState<string | null>(null);
   const pageTitle = useMemo(() => getPageTitle(location.pathname), [location.pathname]);
 
   // When expired and on /planos, render without sidebar (blocked layout)
@@ -64,6 +68,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
     document.body.classList.toggle('mobile-menu-open', mobileMenuOpen);
     return () => document.body.classList.remove('mobile-menu-open');
   }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    if (loading || !profile) return;
+    if (autoOnboardingHandledFor === profile.user_id) return;
+
+    setAutoOnboardingHandledFor(profile.user_id);
+    if (profile.onboarding_completed === false) {
+      setShowOnboarding(true);
+    }
+  }, [autoOnboardingHandledFor, loading, profile]);
 
   if (isExpired && isPlansRoute) {
     return <>{children}</>;
@@ -103,6 +117,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      <OnboardingTutorial
+        open={showOnboarding}
+        onClose={async (completed) => {
+          setShowOnboarding(false);
+          if (completed) await completeOnboarding();
+        }}
+      />
     </div>
   );
 }
