@@ -106,7 +106,7 @@ type DashboardSnapshot = {
   monthlySeries: MonthlyPoint[];
 };
 
-const dashboardCache = new Map<string, DashboardSnapshot>();
+
 
 const chartConfig = {
   receitas: { label: 'Receitas', color: 'hsl(var(--success))' },
