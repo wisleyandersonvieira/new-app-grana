@@ -106,7 +106,7 @@ type DashboardSnapshot = {
   monthlySeries: MonthlyPoint[];
 };
 
-const dashboardCache = new Map<string, DashboardSnapshot>();
+
 
 const chartConfig = {
   receitas: { label: 'Receitas', color: 'hsl(var(--success))' },
@@ -442,11 +442,7 @@ export default function Dashboard() {
     const loadDashboardData = async () => {
       setLoading(true);
 
-      if (competencia === getCurrentCompetencia() && dashboardCache.has(competencia)) {
-        setDashboard(dashboardCache.get(competencia) ?? null);
-        setLoading(false);
-        return;
-      }
+
 
       const [{ data: contas }, { data: receitasPagas }, { data: despesasPagas }, { data: transferencias }, { data: metasData }] =
         await Promise.all([
@@ -581,9 +577,6 @@ export default function Dashboard() {
         monthlySeries,
       };
 
-      if (competencia === getCurrentCompetencia()) {
-        dashboardCache.set(competencia, snapshot);
-      }
 
       setDashboard(snapshot);
       setLoading(false);
