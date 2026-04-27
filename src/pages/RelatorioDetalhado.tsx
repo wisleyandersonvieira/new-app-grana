@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getCurrentCompetencia, getMonthName } from '@/lib/financial';
 import { exportToExcel } from '@/lib/export';
 import { isCreditCardCategoryName } from '@/lib/credit-card-category';
+import { getMonthDateRange } from '@/lib/comparativo-mensal';
 
 type Row = { data_pagamento: string; descricao: string; categoria: string; subcategoria: string; receita: number; despesa: number };
 type ItemFaturaReport = {
@@ -73,8 +74,8 @@ export default function RelatorioDetalhado() {
 
     // Itens fatura - competencia is a DATE column (YYYY-MM-01)
     // Server-side range filter prevents hitting Supabase's 1000-row default limit.
-    const compInicioDate = `${compInicio}-01`;
-    const compFimDate = `${compFim}-31`;
+    const compInicioDate = getMonthDateRange(compInicio).start;
+    const compFimDate = getMonthDateRange(compFim).end;
     let iq = supabase
       .from('itens_fatura')
       .select('valor, categoria_id, subcategoria_id, descricao, data, competencia, faturas_cartao(mes_ano, data_vencimento)')

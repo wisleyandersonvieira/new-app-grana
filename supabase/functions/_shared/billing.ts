@@ -119,7 +119,7 @@ export async function syncStripeDataForUser({
       expand: ["data.default_payment_method", "data.items.data.price"],
     });
     subscription = subscriptions.data
-      .sort((a, b) => b.created - a.created)[0] ?? null;
+      .sort((a: Stripe.Subscription, b: Stripe.Subscription) => b.created - a.created)[0] ?? null;
   }
 
   let paymentMethod: Stripe.PaymentMethod | null = null;
