@@ -577,9 +577,6 @@ export default function Dashboard() {
         monthlySeries,
       };
 
-      if (competencia === getCurrentCompetencia()) {
-        dashboardCache.set(competencia, snapshot);
-      }
 
       setDashboard(snapshot);
       setLoading(false);
