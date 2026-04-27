@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const envFiles = ['.env.local', '.env'];
@@ -120,6 +121,12 @@ async function expectRejected(name, action) {
   mark(name, 'erro de RLS/integridade', Boolean(error), error?.message || 'operacao aceita indevidamente');
 }
 
+async function expectAccepted(name, action) {
+  const { data, error } = await action();
+  if (data?.id) createdRows.push({ table: 'despesas', id: data.id });
+  mark(name, 'operacao aceita', !error, error?.message || data?.id || 'ok');
+}
+
 async function main() {
   const userA = await createUser('user-a');
   const userB = await createUser('user-b');
@@ -217,6 +224,18 @@ async function main() {
       categoria_id: categoriaA.id,
       lote_id: faturaB.id,
     }),
+  );
+
+  await expectAccepted('despesas: usuario A cria despesa com lote_id UUID sem fatura associada', () =>
+    userA.client.from('despesas').insert({
+      usuario_id: userA.id,
+      descricao: `Despesa lote normal ${runId}`,
+      valor: 1,
+      competencia: '2026-04-01',
+      conta_id: contaA.id,
+      categoria_id: categoriaA.id,
+      lote_id: randomUUID(),
+    }).select('id').single(),
   );
 
   await expectRejected('faturas_cartao: usuario A nao cria fatura apontando para conta B', () =>
