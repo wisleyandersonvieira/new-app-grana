@@ -2,58 +2,198 @@ import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Target, Plus, Pencil, Trash2, Check, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Target, Plus, Pencil, Trash2, Check, X, Filter } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { formatCurrency, parseCurrencyInput, getMonthName, getCurrentCompetencia } from '@/lib/financial';
+import { formatCurrency, parseCurrencyInput, getMonthName } from '@/lib/financial';
+
+type MetaNatureza = 'receita' | 'despesa';
+type MetaTipo = 'receita' | 'despesa' | 'categoria';
 
 type Meta = {
-  id: string; tipo: string | null; mes_ano: string; valor: number; categoria_id: string | null;
+  id: string;
+  tipo: MetaTipo | null;
+  natureza?: MetaNatureza | null;
+  mes_ano: string;
+  valor: number;
+  categoria_id: string | null;
 };
+
 type Categoria = { id: string; nome: string };
+
+type FilterState = {
+  compInicio: string;
+  compFim: string;
+  ano: string;
+  tipo: string;
+  natureza: string;
+  categoriaId: string;
+};
+
+const PAGE_SIZE = 15;
+const ALL = 'all';
+
+const getMetaNatureza = (meta: Pick<Meta, 'tipo' | 'natureza'>): MetaNatureza =>
+  meta.natureza ?? (meta.tipo === 'receita' ? 'receita' : 'despesa');
+
+const getMetaDisplayName = (meta: Pick<Meta, 'tipo' | 'natureza' | 'categoria_id'>, categoryName?: string) => {
+  const natureza = getMetaNatureza(meta);
+  if (meta.tipo === 'receita') return 'Meta de receita';
+  if (meta.tipo === 'despesa') return 'Orçamento de despesas';
+  if (natureza === 'receita') return categoryName ? `Meta de ${categoryName}` : 'Meta por categoria';
+  return categoryName ? `Orçamento de ${categoryName}` : 'Orçamento por categoria';
+};
+
+const formatCompetencia = (competencia: string) => {
+  const [year, month] = competencia.split('-');
+  return `${getMonthName(Number(month) - 1)}/${year}`;
+};
 
 export default function CadastrarMetas() {
   const { user } = useAuth();
   const [metas, setMetas] = useState<Meta[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
 
-  // Form
-  const [tipo, setTipo] = useState('despesa');
+  const [tipo, setTipo] = useState<MetaTipo>('despesa');
+  const [natureza, setNatureza] = useState<MetaNatureza>('despesa');
   const [categoriaId, setCategoriaId] = useState('');
   const [valorStr, setValorStr] = useState('');
   const [modo, setModo] = useState<'mes' | 'ano'>('mes');
   const [mes, setMes] = useState(String(new Date().getMonth() + 1));
   const [ano, setAno] = useState(String(new Date().getFullYear()));
-  const [loading, setLoading] = useState(false);
 
-  // Filters
   const [filterCompInicio, setFilterCompInicio] = useState('');
   const [filterCompFim, setFilterCompFim] = useState('');
-  const [filterAno, setFilterAno] = useState('');
-  const [filterTipo, setFilterTipo] = useState('all');
-  const [filterCats, setFilterCats] = useState<string[]>([]);
+  const [filterAno, setFilterAno] = useState(ALL);
+  const [filterTipo, setFilterTipo] = useState(ALL);
+  const [filterNatureza, setFilterNatureza] = useState(ALL);
+  const [filterCategoria, setFilterCategoria] = useState(ALL);
+  const [appliedFilters, setAppliedFilters] = useState<FilterState | null>(null);
 
-  // Edit
   const [editId, setEditId] = useState<string | null>(null);
   const [editValorStr, setEditValorStr] = useState('');
-
-  // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
-  const fetchData = async () => {
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
+
+  const catMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    categorias.forEach(c => { map[c.id] = c.nome; });
+    return map;
+  }, [categorias]);
+
+  const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const showingFrom = totalCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const showingTo = Math.min(currentPage * PAGE_SIZE, totalCount);
+
+  const fetchCategorias = async () => {
     if (!user) return;
-    const [{ data: m }, { data: c }] = await Promise.all([
-      supabase.from('metas').select('*').eq('usuario_id', user.id).order('mes_ano'),
-      supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).order('nome'),
-    ]);
-    if (m) setMetas(m as any);
-    if (c) setCategorias(c);
+    const { data } = await supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).order('nome');
+    if (data) setCategorias(data);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => { fetchCategorias(); }, [user]);
+
+  const buildMetasQuery = (filters: FilterState) => {
+    let query = supabase
+      .from('metas')
+      .select('*', { count: 'exact' })
+      .eq('usuario_id', user!.id);
+
+    if (filters.compInicio) query = query.gte('mes_ano', filters.compInicio);
+    if (filters.compFim) query = query.lte('mes_ano', filters.compFim);
+    if (filters.ano !== ALL) {
+      query = query.gte('mes_ano', `${filters.ano}-01`).lte('mes_ano', `${filters.ano}-12`);
+    }
+    if (filters.tipo !== ALL) query = query.eq('tipo', filters.tipo);
+    if (filters.natureza !== ALL) {
+      if (filters.natureza === 'despesa') query = query.or('natureza.is.null,natureza.eq.despesa');
+      else query = query.eq('natureza', filters.natureza);
+    }
+    if (filters.categoriaId !== ALL) query = query.eq('categoria_id', filters.categoriaId);
+
+    return query.order('mes_ano', { ascending: false }).order('tipo', { ascending: true }).order('created_at', { ascending: false });
+  };
+
+  const fetchMetas = async (filters = appliedFilters, page = currentPage) => {
+    if (!user || !filters) return;
+    setLoading(true);
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data, count, error } = await buildMetasQuery(filters).range(from, to);
+
+    if (error) {
+      toast.error('Erro ao consultar metas.');
+      setLoading(false);
+      return;
+    }
+
+    setMetas((data ?? []) as Meta[]);
+    setTotalCount(count ?? 0);
+    setSelectedIds(new Set());
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (appliedFilters) fetchMetas(appliedFilters, currentPage);
+  }, [currentPage]);
+
+  const handleApplyFilters = () => {
+    const filters = {
+      compInicio: filterCompInicio,
+      compFim: filterCompFim,
+      ano: filterAno,
+      tipo: filterTipo,
+      natureza: filterNatureza,
+      categoriaId: filterCategoria,
+    };
+    setAppliedFilters(filters);
+    setCurrentPage(1);
+    fetchMetas(filters, 1);
+  };
+
+  const handleClearFilters = () => {
+    setFilterCompInicio('');
+    setFilterCompFim('');
+    setFilterAno(ALL);
+    setFilterTipo(ALL);
+    setFilterNatureza(ALL);
+    setFilterCategoria(ALL);
+    setAppliedFilters(null);
+    setMetas([]);
+    setTotalCount(0);
+    setSelectedIds(new Set());
+    setCurrentPage(1);
+  };
+
+  const duplicateExists = async (comp: string) => {
+    let query = supabase
+      .from('metas')
+      .select('id')
+      .eq('usuario_id', user!.id)
+      .eq('mes_ano', comp)
+      .eq('tipo', tipo)
+      .limit(1);
+
+    if (tipo === 'categoria') {
+      query = query.eq('categoria_id', categoriaId);
+      if (natureza === 'despesa') query = query.or('natureza.is.null,natureza.eq.despesa');
+      else query = query.eq('natureza', natureza);
+    }
+
+    const { data } = await query;
+    return Boolean(data?.length);
+  };
 
   const handleAdd = async () => {
     if (!user || !valorStr.trim()) return;
@@ -61,59 +201,67 @@ export default function CadastrarMetas() {
     if (valor <= 0) { toast.error('Valor inválido.'); return; }
     if (tipo === 'categoria' && !categoriaId) { toast.error('Selecione uma categoria.'); return; }
 
-    setLoading(true);
-    const competencias: string[] = [];
-    if (modo === 'mes') {
-      competencias.push(`${ano}-${mes.padStart(2, '0')}`);
-    } else {
-      for (let m = 1; m <= 12; m++) competencias.push(`${ano}-${String(m).padStart(2, '0')}`);
-    }
+    setSaving(true);
+    const competencias = modo === 'mes'
+      ? [`${ano}-${mes.padStart(2, '0')}`]
+      : Array.from({ length: 12 }, (_, index) => `${ano}-${String(index + 1).padStart(2, '0')}`);
 
     let created = 0;
     for (const comp of competencias) {
-      // Check duplicate
-      const existing = metas.find(m =>
-        m.mes_ano === comp && m.tipo === tipo && (tipo !== 'categoria' || m.categoria_id === categoriaId)
-      );
-      if (existing) continue;
+      if (await duplicateExists(comp)) continue;
 
+      const metaNatureza = tipo === 'categoria' ? natureza : tipo;
       const { error } = await supabase.from('metas').insert({
-        usuario_id: user.id, tipo, mes_ano: comp, valor,
+        usuario_id: user.id,
+        tipo,
+        natureza: metaNatureza,
+        mes_ano: comp,
+        valor,
         categoria_id: tipo === 'categoria' ? categoriaId : null,
       } as any);
       if (!error) created++;
     }
 
-    if (created > 0) toast.success(`${created} meta(s) criada(s)!`);
-    else toast.info('Nenhuma meta nova (duplicatas ignoradas).');
+    if (created > 0) toast.success(`${created} registro(s) criado(s)!`);
+    else toast.info('Nenhum registro novo (duplicatas ignoradas).');
     setValorStr('');
-    fetchData();
-    setLoading(false);
+    if (appliedFilters) fetchMetas(appliedFilters, currentPage);
+    setSaving(false);
   };
 
   const handleEditSave = async (id: string) => {
     const valor = parseCurrencyInput(editValorStr);
     if (valor <= 0) { toast.error('Valor inválido.'); return; }
-    await supabase.from('metas').update({ valor }).eq('id', id);
-    toast.success('Meta atualizada!');
+    const { error } = await supabase.from('metas').update({ valor }).eq('id', id);
+    if (error) {
+      toast.error('Erro ao atualizar.');
+      return;
+    }
+    toast.success('Registro atualizado!');
     setEditId(null);
-    fetchData();
+    if (appliedFilters) fetchMetas(appliedFilters, currentPage);
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from('metas').delete().eq('id', id);
-    toast.success('Meta excluída!');
-    fetchData();
+    const { error } = await supabase.from('metas').delete().eq('id', id);
+    if (error) {
+      toast.error('Erro ao excluir.');
+      return;
+    }
+    toast.success('Registro excluído!');
+    if (appliedFilters) fetchMetas(appliedFilters, currentPage);
   };
 
   const handleDeleteSelected = async () => {
     if (selectedIds.size === 0) return;
-    for (const id of selectedIds) {
-      await supabase.from('metas').delete().eq('id', id);
+    const { error } = await supabase.from('metas').delete().in('id', Array.from(selectedIds));
+    if (error) {
+      toast.error('Erro ao excluir registros selecionados.');
+      return;
     }
-    toast.success(`${selectedIds.size} meta(s) excluída(s)!`);
+    toast.success(`${selectedIds.size} registro(s) excluído(s)!`);
     setSelectedIds(new Set());
-    fetchData();
+    if (appliedFilters) fetchMetas(appliedFilters, currentPage);
   };
 
   const toggleSelect = (id: string) => {
@@ -124,44 +272,34 @@ export default function CadastrarMetas() {
     });
   };
 
-  const catMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    categorias.forEach(c => { m[c.id] = c.nome; });
-    return m;
-  }, [categorias]);
-
-  const filtered = useMemo(() => {
-    return metas.filter(m => {
-      if (filterCompInicio && m.mes_ano < filterCompInicio) return false;
-      if (filterCompFim && m.mes_ano > filterCompFim) return false;
-      if (filterAno && !m.mes_ano.startsWith(filterAno)) return false;
-      if (filterTipo !== 'all' && m.tipo !== filterTipo) return false;
-      if (filterCats.length > 0 && m.categoria_id && !filterCats.includes(m.categoria_id)) return false;
-      return true;
-    });
-  }, [metas, filterCompInicio, filterCompFim, filterAno, filterTipo, filterCats]);
-
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 10 }, (_, i) => currentYear - 3 + i);
-
-  const tipoLabel = (t: string) => t === 'receita' ? 'Receita' : t === 'despesa' ? 'Despesa' : 'Categoria';
+  const handleTipoChange = (nextTipo: MetaTipo) => {
+    setTipo(nextTipo);
+    if (nextTipo === 'receita') setNatureza('receita');
+    if (nextTipo === 'despesa') setNatureza('despesa');
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold">Cadastrar Metas</h1>
-        <p className="text-muted-foreground">Defina suas metas financeiras</p>
+        <p className="text-muted-foreground">Defina metas de receita e orçamentos de despesa.</p>
       </div>
 
-      {/* Form */}
-      <Card>
-        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Plus className="h-5 w-5 text-accent" /> Nova Meta</CardTitle></CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Tipo</label>
-              <Select value={tipo} onValueChange={setTipo}>
-                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+      <Card className="overflow-hidden rounded-2xl border-slate-200/80 bg-white shadow-[0_14px_40px_-28px_hsl(224_48%_12%/0.45)]">
+        <CardHeader className="border-b border-slate-100 pb-4">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Plus className="h-5 w-5" />
+            </span>
+            Nova meta ou orçamento
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-5 sm:p-6">
+          <div className="grid gap-4 lg:grid-cols-[minmax(140px,0.8fr)_minmax(160px,0.8fr)_minmax(190px,1fr)_minmax(140px,0.8fr)_minmax(150px,0.8fr)_minmax(130px,0.6fr)_auto] lg:items-end">
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Tipo</Label>
+              <Select value={tipo} onValueChange={(value) => handleTipoChange(value as MetaTipo)}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="receita">Receita</SelectItem>
                   <SelectItem value="despesa">Despesa</SelectItem>
@@ -169,137 +307,258 @@ export default function CadastrarMetas() {
                 </SelectContent>
               </Select>
             </div>
+
             {tipo === 'categoria' && (
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Categoria</label>
+              <div className="space-y-2">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Natureza</Label>
+                <Select value={natureza} onValueChange={(value) => setNatureza(value as MetaNatureza)}>
+                  <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="receita">Receita</SelectItem>
+                    <SelectItem value="despesa">Despesa</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {tipo === 'categoria' && (
+              <div className="space-y-2">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Categoria</Label>
                 <Select value={categoriaId} onValueChange={setCategoriaId}>
-                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>{categorias.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             )}
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Valor (R$)</label>
-              <Input placeholder="0,00" value={valorStr} onChange={(e) => setValorStr(e.target.value)} className="w-[140px]" />
+
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Valor</Label>
+              <Input placeholder="0,00" value={valorStr} onChange={(e) => setValorStr(e.target.value)} className="h-11 rounded-xl border-slate-200 bg-white shadow-sm" />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Período</label>
-              <Select value={modo} onValueChange={(v) => setModo(v as 'mes' | 'ano')}>
-                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Período</Label>
+              <Select value={modo} onValueChange={(value) => setModo(value as 'mes' | 'ano')}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mes">Mês específico</SelectItem>
                   <SelectItem value="ano">Ano inteiro</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {modo === 'mes' && (
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Mês</label>
+
+            {modo === 'mes' ? (
+              <div className="space-y-2">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Mês</Label>
                 <Select value={mes} onValueChange={setMes}>
-                  <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>{Array.from({ length: 12 }, (_, i) => <SelectItem key={i + 1} value={String(i + 1)}>{getMonthName(i)}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-            )}
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Ano</label>
+            ) : null}
+
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Ano</Label>
               <Select value={ano} onValueChange={setAno}>
-                <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <Button onClick={handleAdd} disabled={loading}><Plus className="mr-2 h-4 w-4" /> Adicionar</Button>
+
+            <Button onClick={handleAdd} disabled={saving} className="h-11 rounded-xl px-5 font-semibold shadow-sm shadow-primary/20">
+              <Plus className="mr-2 h-4 w-4" /> Adicionar
+            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Comp. início</label>
-              <Input placeholder="YYYY-MM" value={filterCompInicio} onChange={(e) => setFilterCompInicio(e.target.value)} className="w-[120px]" />
+      <Card className="overflow-hidden rounded-2xl border-slate-200/80 bg-white shadow-[0_14px_40px_-28px_hsl(224_48%_12%/0.45)]">
+        <CardContent className="space-y-5 p-5 sm:p-6">
+          <div className="flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Filter className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Filtros</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Use competência, tipo e natureza para consultar os registros cadastrados.</p>
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Comp. fim</label>
-              <Input placeholder="YYYY-MM" value={filterCompFim} onChange={(e) => setFilterCompFim(e.target.value)} className="w-[120px]" />
+            {appliedFilters && (
+              <Badge variant="outline" className="w-fit rounded-full border-primary/15 bg-primary/5 px-3 py-1 text-primary">
+                {totalCount} resultado(s)
+              </Badge>
+            )}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(150px,0.8fr)_minmax(150px,0.8fr)_minmax(120px,0.6fr)_minmax(140px,0.7fr)_minmax(140px,0.7fr)_minmax(190px,1fr)_auto_auto] xl:items-end">
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Competência inicial</Label>
+              <Input type="month" value={filterCompInicio} onChange={(e) => setFilterCompInicio(e.target.value)} className="h-11 rounded-xl border-slate-200 bg-white shadow-sm" />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Ano</label>
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Competência final</Label>
+              <Input type="month" value={filterCompFim} onChange={(e) => setFilterCompFim(e.target.value)} className="h-11 rounded-xl border-slate-200 bg-white shadow-sm" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Ano</Label>
               <Select value={filterAno} onValueChange={setFilterAno}>
-                <SelectTrigger className="w-[90px]"><SelectValue placeholder="Todos" /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value={ALL}>Todos</SelectItem>
                   {years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Tipo</label>
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Tipo</Label>
               <Select value={filterTipo} onValueChange={setFilterTipo}>
-                <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value={ALL}>Todos</SelectItem>
                   <SelectItem value="receita">Receita</SelectItem>
                   <SelectItem value="despesa">Despesa</SelectItem>
                   <SelectItem value="categoria">Categoria</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {selectedIds.size > 0 && (
-              <Button variant="destructive" size="sm" onClick={handleDeleteSelected}>
-                <Trash2 className="mr-2 h-4 w-4" /> Excluir {selectedIds.size}
-              </Button>
-            )}
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Natureza</Label>
+              <Select value={filterNatureza} onValueChange={setFilterNatureza}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>Todas</SelectItem>
+                  <SelectItem value="receita">Receita</SelectItem>
+                  <SelectItem value="despesa">Despesa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Categoria</Label>
+              <Select value={filterCategoria} onValueChange={setFilterCategoria}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>Todas</SelectItem>
+                  {categorias.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleApplyFilters} disabled={loading} className="h-11 rounded-xl px-5 font-semibold shadow-sm shadow-primary/20">
+              Filtrar
+            </Button>
+            <Button variant="outline" onClick={handleClearFilters} disabled={loading && !appliedFilters} className="h-11 rounded-xl border-slate-200 bg-white px-4 shadow-sm">
+              Limpar
+            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Listing */}
-      <Card>
-        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Target className="h-5 w-5 text-accent" /> Metas cadastradas</CardTitle></CardHeader>
-        <CardContent>
-          {filtered.length === 0 ? <p className="text-muted-foreground text-sm">Nenhuma meta encontrada.</p> : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b text-left">
-                  <th className="py-2 px-2 w-8"><Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={(c) => { if (c) setSelectedIds(new Set(filtered.map(m => m.id))); else setSelectedIds(new Set()); }} /></th>
-                  <th className="py-2 px-3">Competência</th><th className="py-2 px-3">Tipo</th><th className="py-2 px-3">Categoria</th><th className="py-2 px-3 text-right">Valor</th><th className="py-2 px-3 text-right">Ações</th>
-                </tr></thead>
-                <tbody>
-                  {filtered.map(m => {
-                    const [y, mo] = m.mes_ano.split('-');
-                    return (
-                      <tr key={m.id} className="border-b hover:bg-muted/50">
-                        <td className="py-2 px-2"><Checkbox checked={selectedIds.has(m.id)} onCheckedChange={() => toggleSelect(m.id)} /></td>
-                        <td className="py-2 px-3">{getMonthName(Number(mo) - 1)}/{y}</td>
-                        <td className="py-2 px-3">{tipoLabel(m.tipo)}</td>
-                        <td className="py-2 px-3">{m.categoria_id ? catMap[m.categoria_id] ?? '-' : '-'}</td>
-                        <td className="py-2 px-3 text-right">
-                          {editId === m.id ? (
-                            <Input value={editValorStr} onChange={(e) => setEditValorStr(e.target.value)} className="h-8 w-[120px] inline-block" />
-                          ) : formatCurrency(m.valor)}
-                        </td>
-                        <td className="py-2 px-3 text-right">
-                          {editId === m.id ? (
-                            <div className="flex gap-1 justify-end">
-                              <Button size="sm" variant="ghost" onClick={() => handleEditSave(m.id)}><Check className="h-4 w-4" /></Button>
-                              <Button size="sm" variant="ghost" onClick={() => setEditId(null)}><X className="h-4 w-4" /></Button>
-                            </div>
-                          ) : (
-                            <div className="flex gap-1 justify-end">
-                              <Button size="sm" variant="ghost" onClick={() => { setEditId(m.id); setEditValorStr(m.valor.toFixed(2).replace('.', ',')); }}><Pencil className="h-4 w-4" /></Button>
-                              <Button size="sm" variant="ghost" onClick={() => handleDelete(m.id)}><Trash2 className="h-4 w-4" /></Button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+      <Card className="overflow-hidden rounded-2xl border-slate-200/80 bg-white shadow-[0_14px_40px_-28px_hsl(224_48%_12%/0.45)]">
+        <CardHeader className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Target className="h-5 w-5" />
+            </span>
+            Metas e orçamentos cadastrados
+          </CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedIds.size > 0 && (
+              <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-9 rounded-lg">
+                <Trash2 className="mr-2 h-4 w-4" /> Excluir {selectedIds.size}
+              </Button>
+            )}
+            <p className="text-sm text-muted-foreground">
+              {appliedFilters ? `${showingFrom}-${showingTo} de ${totalCount}` : 'Aguardando consulta'}
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {!appliedFilters ? (
+            <div className="m-5 rounded-2xl border border-dashed py-12 text-center text-sm text-muted-foreground">
+              Use os filtros para consultar as metas e orçamentos cadastrados.
             </div>
+          ) : loading ? (
+            <div className="m-5 rounded-2xl border border-dashed py-12 text-center text-sm text-muted-foreground">
+              Consultando registros...
+            </div>
+          ) : metas.length === 0 ? (
+            <div className="m-5 rounded-2xl border border-dashed py-12 text-center text-sm text-muted-foreground">
+              Nenhum registro encontrado para os filtros selecionados.
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-slate-50/80 text-left text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      <th className="px-4 py-2.5 w-10">
+                        <Checkbox
+                          checked={selectedIds.size === metas.length && metas.length > 0}
+                          onCheckedChange={(checked) => { if (checked) setSelectedIds(new Set(metas.map(m => m.id))); else setSelectedIds(new Set()); }}
+                        />
+                      </th>
+                      <th className="px-4 py-2.5">Competência</th>
+                      <th className="px-4 py-2.5">Registro</th>
+                      <th className="px-4 py-2.5">Natureza</th>
+                      <th className="px-4 py-2.5">Categoria</th>
+                      <th className="px-4 py-2.5 text-right">Valor</th>
+                      <th className="px-4 py-2.5 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metas.map(m => {
+                      const categoryName = m.categoria_id ? catMap[m.categoria_id] ?? '-' : '-';
+                      const naturezaMeta = getMetaNatureza(m);
+                      return (
+                        <tr key={m.id} className="border-b transition hover:bg-primary/5">
+                          <td className="px-4 py-2"><Checkbox checked={selectedIds.has(m.id)} onCheckedChange={() => toggleSelect(m.id)} /></td>
+                          <td className="px-4 py-2">{formatCompetencia(m.mes_ano)}</td>
+                          <td className="px-4 py-2 font-medium">{getMetaDisplayName(m, categoryName === '-' ? undefined : categoryName)}</td>
+                          <td className="px-4 py-2">
+                            <Badge variant="outline" className={naturezaMeta === 'receita' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>
+                              {naturezaMeta === 'receita' ? 'Meta' : 'Orçamento'}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-2">{categoryName}</td>
+                          <td className="px-4 py-2 text-right font-medium">
+                            {editId === m.id ? (
+                              <Input value={editValorStr} onChange={(e) => setEditValorStr(e.target.value)} className="ml-auto h-8 w-[120px] rounded-lg text-right" />
+                            ) : formatCurrency(m.valor)}
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            {editId === m.id ? (
+                              <div className="flex gap-1 justify-end">
+                                <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg" onClick={() => handleEditSave(m.id)}><Check className="h-4 w-4" /></Button>
+                                <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg" onClick={() => setEditId(null)}><X className="h-4 w-4" /></Button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-1 justify-end">
+                                <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg" onClick={() => { setEditId(m.id); setEditValorStr(m.valor.toFixed(2).replace('.', ',')); }}><Pencil className="h-4 w-4" /></Button>
+                                <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-rose-50 hover:text-rose-700" onClick={() => handleDelete(m.id)}><Trash2 className="h-4 w-4" /></Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex flex-col gap-3 border-t p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm text-muted-foreground">
+                  Página {currentPage} de {pageCount} • {showingFrom}-{showingTo} de {totalCount}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" className="h-9 rounded-lg" disabled={currentPage <= 1 || loading} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
+                    Anterior
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-9 rounded-lg" disabled={currentPage >= pageCount || loading} onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}>
+                    Próxima
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

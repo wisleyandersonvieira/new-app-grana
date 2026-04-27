@@ -813,6 +813,7 @@ export type Database = {
           created_at: string | null
           id: string
           mes_ano: string
+          natureza: string | null
           tipo: string | null
           usuario_id: string
           valor: number
@@ -822,6 +823,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           mes_ano: string
+          natureza?: string | null
           tipo?: string | null
           usuario_id: string
           valor: number
@@ -831,6 +833,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           mes_ano?: string
+          natureza?: string | null
           tipo?: string | null
           usuario_id?: string
           valor?: number

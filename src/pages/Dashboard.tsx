@@ -278,24 +278,30 @@ const buildMetas = (
   metasData: any[],
   receitasMes: number,
   despesasMes: number,
+  receitasPorCategoriaId: Map<string, number>,
   despesasPorCategoriaId: Map<string, number>,
 ) => {
   return metasData.map((meta) => {
     let valorRealizado = 0;
     let label = 'Meta';
+    const natureza = meta.natureza ?? (meta.tipo === 'receita' ? 'receita' : 'despesa');
 
     if (meta.tipo === 'receita') {
       valorRealizado = receitasMes;
       label = 'Meta de receita';
     } else if (meta.tipo === 'despesa') {
       valorRealizado = despesasMes;
-      label = 'Meta de despesa';
+      label = 'Orçamento de despesas';
     } else if (meta.tipo === 'categoria') {
-      valorRealizado = despesasPorCategoriaId.get(meta.categoria_id) ?? 0;
-      label = `Categoria: ${meta.categorias?.nome || 'Sem categoria'}`;
+      valorRealizado = natureza === 'receita'
+        ? receitasPorCategoriaId.get(meta.categoria_id) ?? 0
+        : despesasPorCategoriaId.get(meta.categoria_id) ?? 0;
+      label = natureza === 'receita'
+        ? `Meta de ${meta.categorias?.nome || 'Sem categoria'}`
+        : `Orçamento de ${meta.categorias?.nome || 'Sem categoria'}`;
     }
 
-    const pct = meta.valor > 0 ? Math.min((valorRealizado / meta.valor) * 100, 100) : 0;
+    const pct = meta.valor > 0 ? (valorRealizado / meta.valor) * 100 : 0;
     const tone = pct <= 80 ? 'success' : pct <= 100 ? 'warning' : 'destructive';
 
     return {
@@ -556,7 +562,7 @@ export default function Dashboard() {
             .lte('competencia', competencia),
           supabase
             .from('receitas')
-            .select('valor, paga')
+            .select('valor, paga, categoria_id')
             .eq('usuario_id', user.id)
             .eq('competencia', competencia)
             .eq('paga', true),
@@ -591,7 +597,7 @@ export default function Dashboard() {
       const receitasRows = (receitasPagas ?? []) as EntryRow[];
       const despesasRows = (despesasPagas ?? []) as EntryRow[];
       const despesasCategoriaRows = (despesasCategoriaData ?? []) as EntryRow[];
-      const metasReceitasRows = (metasReceitas ?? []) as Array<{ valor: number }>;
+      const metasReceitasRows = (metasReceitas ?? []) as Array<{ valor: number; categoria_id?: string | null }>;
       const metasDespesasRows = (metasDespesas ?? []) as Array<{ valor: number; categoria_id?: string | null }>;
       const itensFaturaRows = (itensFatura ?? []) as InvoiceItemRow[];
       const transferRows = (transferencias ?? []) as TransferRow[];
@@ -678,6 +684,10 @@ export default function Dashboard() {
       const dailySeries = buildDailySeries(currentRange.start, currentRange.end, receitasMesRows, despesasMesRows);
       const monthlySeries = buildMonthlySeries(competencia, receitasRows, despesasRows);
       const metasCategoryTotals = new Map<string, number>();
+      const metasReceitasCategoryTotals = new Map<string, number>();
+      metasReceitasRows.forEach((row) => {
+        if (row.categoria_id) metasReceitasCategoryTotals.set(row.categoria_id, (metasReceitasCategoryTotals.get(row.categoria_id) ?? 0) + row.valor);
+      });
       metasDespesasRows.forEach((row) => {
         if (row.categoria_id && creditCardCategoryIds.has(row.categoria_id)) return;
         if (row.categoria_id) metasCategoryTotals.set(row.categoria_id, (metasCategoryTotals.get(row.categoria_id) ?? 0) + row.valor);
@@ -688,7 +698,7 @@ export default function Dashboard() {
       });
       const metasReceitasMes = sumValues(metasReceitasRows);
       const metasDespesasMes = sumValues(metasDespesasRows);
-      const metas = buildMetas(metasData ?? [], metasReceitasMes, metasDespesasMes, metasCategoryTotals);
+      const metas = buildMetas(metasData ?? [], metasReceitasMes, metasDespesasMes, metasReceitasCategoryTotals, metasCategoryTotals);
       const alerts = buildAlerts(
         receitasMes,
         despesasMes,
