@@ -81,6 +81,14 @@ type DailyPoint = {
   despesas: number;
 };
 
+type MonthlyPoint = {
+  month: string;
+  label: string;
+  fullLabel: string;
+  receitas: number;
+  despesas: number;
+};
+
 type DashboardSnapshot = {
   saldoTotal: number;
   saldoAnteriorMes: number;
@@ -95,6 +103,7 @@ type DashboardSnapshot = {
   metas: MetaProgress[];
   alerts: AlertItem[];
   dailySeries: DailyPoint[];
+  monthlySeries: MonthlyPoint[];
 };
 
 const dashboardCache = new Map<string, DashboardSnapshot>();
@@ -173,6 +182,28 @@ const buildDailySeries = (start: string, end: string, receitas: EntryRow[], desp
       fullDate: date,
       receitas: receitasDia,
       despesas: despesasDia,
+    };
+  });
+};
+
+const buildMonthlySeries = (competencia: string, receitas: EntryRow[], despesas: EntryRow[]) => {
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = offsetCompetencia(competencia, index - 11);
+    const [year, monthNumber] = month.split('-').map(Number);
+    const label = `${getMonthName(monthNumber - 1).slice(0, 3)}/${String(year).slice(-2)}`;
+    const receitasMes = receitas
+      .filter((row) => row.data_pagamento?.startsWith(month))
+      .reduce((sum, row) => sum + row.valor, 0);
+    const despesasMes = despesas
+      .filter((row) => row.data_pagamento?.startsWith(month))
+      .reduce((sum, row) => sum + row.valor, 0);
+
+    return {
+      month,
+      label,
+      fullLabel: `${getMonthName(monthNumber - 1)} ${year}`,
+      receitas: receitasMes,
+      despesas: despesasMes,
     };
   });
 };
@@ -376,7 +407,7 @@ function KpiCard({
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <div className="text-3xl font-bold tracking-tight">{value}</div>
+          <div className="whitespace-nowrap text-2xl font-bold tracking-tight tabular-nums">{value}</div>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
         <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${iconClassName}`}>
@@ -521,6 +552,7 @@ export default function Dashboard() {
       const topReceitas = aggregateByCategory(receitasMesRows, receitasMesAnteriorRows);
       const topDespesas = aggregateByCategory(despesasMesRows, despesasMesAnteriorRows);
       const dailySeries = buildDailySeries(currentRange.start, currentRange.end, receitasMesRows, despesasMesRows);
+      const monthlySeries = buildMonthlySeries(competencia, receitasRows, despesasRows);
       const metas = buildMetas(metasData ?? [], receitasMes, despesasMes, topDespesas);
       const alerts = buildAlerts(
         receitasMes,
@@ -546,6 +578,7 @@ export default function Dashboard() {
         metas,
         alerts,
         dailySeries,
+        monthlySeries,
       };
 
       if (competencia === getCurrentCompetencia()) {
@@ -561,7 +594,7 @@ export default function Dashboard() {
     return () => {
       active = false;
     };
-  }, [competencia, user, previousRange.end, currentRange.end, currentRange.start]);
+  }, [competencia, user, previousRange.end, previousRange.start, currentRange.end, currentRange.start]);
 
   const receitasVariation = useMemo(
     () => getVariation(dashboard?.receitasMes ?? 0, dashboard?.receitasMesAnterior ?? 0),
@@ -698,21 +731,20 @@ export default function Dashboard() {
       <section className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
         <Card className="rounded-2xl border shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Evolução do mês</CardTitle>
-            <p className="text-sm text-muted-foreground">Receitas e despesas pagas ao longo dos dias</p>
+            <CardTitle className="text-lg">Evolução Mensal</CardTitle>
+            <p className="text-sm text-muted-foreground">Receitas e despesas pagas nos últimos 12 meses</p>
           </CardHeader>
           <CardContent>
             <ChartContainer className="h-[320px] w-full" config={chartConfig}>
-              <LineChart data={dashboard?.dailySeries ?? []} margin={{ top: 12, right: 12, left: 4, bottom: 0 }}>
+              <LineChart data={dashboard?.monthlySeries ?? []} margin={{ top: 12, right: 12, left: 4, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis dataKey="day" tickLine={false} axisLine={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} />
                 <YAxis tickFormatter={(value) => `R$${Number(value / 1000).toFixed(value >= 1000 ? 0 : 1)}k`} tickLine={false} axisLine={false} />
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
                       labelFormatter={(_, payload) => {
-                        const day = payload?.[0]?.payload?.day;
-                        return day ? `Dia ${day}` : '';
+                        return payload?.[0]?.payload?.fullLabel ?? '';
                       }}
                       formatter={(value, name) => (
                         <div className="flex min-w-[140px] items-center justify-between gap-3">
