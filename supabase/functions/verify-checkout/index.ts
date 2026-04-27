@@ -78,23 +78,34 @@ serve(async (req) => {
     };
     const plano = (priceId && PLAN_BY_PRICE[priceId]) || "mensal";
 
+    const periodStartUnix = (subscription as any).current_period_start ?? null;
     const periodEndUnix =
-      subscription.current_period_end ??
+      (subscription as any).current_period_end ??
       (subscription as any).trial_end ??
       null;
+    const trialEndUnix = (subscription as any).trial_end ?? null;
+    const periodStart = periodStartUnix
+      ? new Date(periodStartUnix * 1000).toISOString()
+      : null;
     const periodEnd = periodEndUnix
       ? new Date(periodEndUnix * 1000).toISOString()
+      : null;
+    const trialEnd = trialEndUnix
+      ? new Date(trialEndUnix * 1000).toISOString()
       : null;
 
     const { error: updError } = await serviceClient
       .from("assinaturas")
       .update({
         status: "active",
+        stripe_status: subscription.status,
         plano,
         stripe_customer_id: session.customer as string,
         stripe_subscription_id: subscription.id,
         stripe_price_id: priceId,
-        data_expiracao: periodEnd,
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
+        trial_fim: trialEnd,
         updated_at: new Date().toISOString(),
       })
       .eq("usuario_id", user.id);
