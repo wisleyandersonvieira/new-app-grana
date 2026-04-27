@@ -86,6 +86,8 @@ interface DespesaRow {
 type SortField = 'data' | 'categoria_nome' | 'subcategoria_nome' | 'descricao' | 'parcela' | 'competencia' | 'valor' | 'data_pagamento';
 type SortDir = 'asc' | 'desc';
 
+const PAGE_SIZE = 15;
+
 type FilterState = {
   categoria: string;
   subcategoria: string;
@@ -146,6 +148,10 @@ export default function Despesas() {
 
   const [despesas, setDespesas] = useState<DespesaRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilters);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
@@ -166,13 +172,18 @@ export default function Despesas() {
     loadData();
   }, [user]);
 
+  useEffect(() => {
+    if (!user || !hasSearched) return;
+    fetchDespesas(appliedFilters, currentPage);
+  }, [currentPage, sortField, sortDir]);
+
   async function loadData() {
     setLoading(true);
     const [catRes, subRes, contRes, bloqRes] = await Promise.all([
-      supabase.from('categorias').select('id, nome').order('nome'),
-      supabase.from('subcategorias').select('id, nome, categoria_id').eq('bloqueada', false).order('nome'),
-      supabase.from('contas').select('id, nome, tipo').eq('bloqueada', false).order('nome'),
-      supabase.from('bloqueios').select('tipo, mes_ano'),
+      supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
+      supabase.from('contas').select('id, nome, tipo').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
+      supabase.from('bloqueios').select('tipo, mes_ano').eq('usuario_id', user.id),
     ]);
 
     setCategorias(catRes.data || []);
@@ -180,39 +191,78 @@ export default function Despesas() {
     setContas((contRes.data || []).map((conta: any) => ({ id: conta.id, nome: conta.nome })));
     setBloqueios(bloqRes.data || []);
 
-    const { data } = await supabase
+    setLoading(false);
+  }
+
+  function buildDespesaQuery(filters: FilterState) {
+    let query = supabase
       .from('despesas')
-      .select('*, categorias(nome), subcategorias(nome), contas(nome, tipo)')
-      .order('data', { ascending: false });
+      .select('*, categorias(nome), subcategorias(nome), contas(nome, tipo)', { count: 'exact' })
+      .eq('usuario_id', user.id);
 
-    if (data) {
-      const loteCount: Record<string, number> = {};
-      data.forEach((despesa: any) => {
-        if (despesa.lote_id) loteCount[despesa.lote_id] = (loteCount[despesa.lote_id] || 0) + 1;
-      });
+    if (filters.categoria !== 'all') query = query.eq('categoria_id', filters.categoria);
+    if (filters.subcategoria !== 'all') query = query.eq('subcategoria_id', filters.subcategoria);
+    if (filters.situacao === 'pagas') query = query.eq('paga', true);
+    if (filters.situacao === 'nao_pagas') query = query.or('paga.is.false,paga.is.null');
+    if (filters.descricao.trim()) query = query.ilike('descricao', `%${filters.descricao.trim()}%`);
 
-      setDespesas(data.map((despesa: any) => ({
-        id: despesa.id,
-        data: despesa.data,
-        categoria_nome: despesa.categorias?.nome || '—',
-        subcategoria_nome: despesa.subcategorias?.nome || '—',
-        descricao: despesa.descricao,
-        parcela: despesa.parcela,
-        total_parcelas: despesa.lote_id ? loteCount[despesa.lote_id] : despesa.parcela ? 1 : null,
-        conta_nome: despesa.contas?.nome || '—',
-        competencia: despesa.competencia,
-        valor: despesa.valor,
-        data_pagamento: despesa.data_pagamento,
-        created_at: despesa.created_at,
-        paga: despesa.paga,
-        conta_id: despesa.conta_id,
-        categoria_id: despesa.categoria_id,
-        subcategoria_id: despesa.subcategoria_id,
-        lote_id: despesa.lote_id,
-        is_cartao: despesa.contas?.tipo === 'cartao',
-      })));
+    const compInicio = filters.compInicioAno && filters.compInicioMes ? `${filters.compInicioAno}-${filters.compInicioMes.padStart(2, '0')}` : null;
+    const compFim = filters.compFimAno && filters.compFimMes ? `${filters.compFimAno}-${filters.compFimMes.padStart(2, '0')}` : null;
+    if (compInicio) query = query.gte('competencia', compInicio);
+    if (compFim) query = query.lte('competencia', compFim);
+
+    if (filters.vencimentoInicio) query = query.gte('data', format(filters.vencimentoInicio, 'yyyy-MM-dd'));
+    if (filters.vencimentoFim) query = query.lte('data', format(filters.vencimentoFim, 'yyyy-MM-dd'));
+    if (filters.pagamentoInicio) query = query.not('data_pagamento', 'is', null).gte('data_pagamento', format(filters.pagamentoInicio, 'yyyy-MM-dd'));
+    if (filters.pagamentoFim) query = query.not('data_pagamento', 'is', null).lte('data_pagamento', format(filters.pagamentoFim, 'yyyy-MM-dd'));
+
+    const ascending = sortDir === 'asc';
+    if (sortField === 'categoria_nome') query = query.order('nome', { ascending, foreignTable: 'categorias' } as any);
+    else if (sortField === 'subcategoria_nome') query = query.order('nome', { ascending, foreignTable: 'subcategorias' } as any);
+    else query = query.order(sortField, { ascending, nullsFirst: false } as any);
+
+    return query.order('id', { ascending: true });
+  }
+
+  async function fetchDespesas(filters: FilterState, page = currentPage) {
+    if (!user) return;
+    setLoading(true);
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data, count, error } = await buildDespesaQuery(filters).range(from, to);
+
+    if (error) {
+      toast.error('Erro ao consultar despesas.');
+      setLoading(false);
+      return;
     }
 
+    const loteCount: Record<string, number> = {};
+    (data || []).forEach((despesa: any) => {
+      if (despesa.lote_id) loteCount[despesa.lote_id] = (loteCount[despesa.lote_id] || 0) + 1;
+    });
+
+    setDespesas((data || []).map((despesa: any) => ({
+      id: despesa.id,
+      data: despesa.data,
+      categoria_nome: despesa.categorias?.nome || '—',
+      subcategoria_nome: despesa.subcategorias?.nome || '—',
+      descricao: despesa.descricao,
+      parcela: despesa.parcela,
+      total_parcelas: despesa.total_parcelas ?? (despesa.lote_id ? loteCount[despesa.lote_id] : despesa.parcela ? 1 : null),
+      conta_nome: despesa.contas?.nome || '—',
+      competencia: despesa.competencia,
+      valor: despesa.valor,
+      data_pagamento: despesa.data_pagamento,
+      created_at: despesa.created_at,
+      paga: despesa.paga,
+      conta_id: despesa.conta_id,
+      categoria_id: despesa.categoria_id,
+      subcategoria_id: despesa.subcategoria_id,
+      lote_id: despesa.lote_id,
+      is_cartao: despesa.contas?.tipo === 'cartao',
+    })));
+    setTotalCount(count ?? 0);
     setLoading(false);
   }
 
@@ -237,51 +287,7 @@ export default function Despesas() {
     return subcategorias.filter((subcategoria) => subcategoria.categoria_id === draftFilters.categoria);
   }, [draftFilters.categoria, subcategorias]);
 
-  const filtered = useMemo(() => {
-    let result = [...despesas];
-    const filters = appliedFilters;
-
-    if (filters.categoria !== 'all') result = result.filter((item) => item.categoria_id === filters.categoria);
-    if (filters.subcategoria !== 'all') result = result.filter((item) => item.subcategoria_id === filters.subcategoria);
-    if (filters.situacao === 'pagas') result = result.filter((item) => item.paga);
-    if (filters.situacao === 'nao_pagas') result = result.filter((item) => !item.paga);
-    if (filters.descricao.trim()) {
-      const term = filters.descricao.toLowerCase().trim();
-      result = result.filter((item) => item.descricao?.toLowerCase().includes(term));
-    }
-
-    const compInicio = filters.compInicioAno && filters.compInicioMes ? `${filters.compInicioAno}-${filters.compInicioMes.padStart(2, '0')}` : null;
-    const compFim = filters.compFimAno && filters.compFimMes ? `${filters.compFimAno}-${filters.compFimMes.padStart(2, '0')}` : null;
-    if (compInicio) result = result.filter((item) => item.competencia && item.competencia >= compInicio);
-    if (compFim) result = result.filter((item) => item.competencia && item.competencia <= compFim);
-
-    if (filters.vencimentoInicio) {
-      const start = format(filters.vencimentoInicio, 'yyyy-MM-dd');
-      result = result.filter((item) => item.data >= start);
-    }
-    if (filters.vencimentoFim) {
-      const end = format(filters.vencimentoFim, 'yyyy-MM-dd');
-      result = result.filter((item) => item.data <= end);
-    }
-    if (filters.pagamentoInicio) {
-      const start = format(filters.pagamentoInicio, 'yyyy-MM-dd');
-      result = result.filter((item) => item.data_pagamento && item.data_pagamento >= start);
-    }
-    if (filters.pagamentoFim) {
-      const end = format(filters.pagamentoFim, 'yyyy-MM-dd');
-      result = result.filter((item) => item.data_pagamento && item.data_pagamento <= end);
-    }
-
-    result.sort((a, b) => {
-      const aVal = a[sortField] ?? '';
-      const bVal = b[sortField] ?? '';
-      if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return result;
-  }, [appliedFilters, despesas, sortDir, sortField]);
+  const filtered = despesas;
 
   const total = filtered.reduce((sum, item) => sum + item.valor, 0);
   const totalPagas = filtered.filter((item) => item.paga).reduce((sum, item) => sum + item.valor, 0);
@@ -342,7 +348,7 @@ export default function Despesas() {
     toast.success('Pagamento(s) registrado(s)!');
     setPayModalOpen(false);
     setSelected(new Set());
-    loadData();
+    if (hasSearched) fetchDespesas(appliedFilters, currentPage);
   }
 
   async function handleCancelPayment(id: string) {
@@ -356,7 +362,7 @@ export default function Despesas() {
       await supabase.from('faturas_cartao').update({ status: 'aberta' }).eq('id', despesa.lote_id);
     }
     toast.success('Pagamento cancelado.');
-    loadData();
+    if (hasSearched) fetchDespesas(appliedFilters, currentPage);
   }
 
   async function handleDelete(ids: string[]) {
@@ -377,7 +383,7 @@ export default function Despesas() {
     toast.success('Despesa(s) excluída(s).');
     setDeleteConfirmOpen(false);
     setSelected(new Set());
-    loadData();
+    if (hasSearched) fetchDespesas(appliedFilters, currentPage);
   }
 
   function handleEdit(item: DespesaRow) {
@@ -391,6 +397,24 @@ export default function Despesas() {
   function clearFilters() {
     setDraftFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
+    setDespesas([]);
+    setSelected(new Set());
+    setHasSearched(false);
+    setFiltersExpanded(true);
+    setCurrentPage(1);
+    setTotalCount(0);
+  }
+
+  function applyFilters() {
+    setAppliedFilters(draftFilters);
+    setSelected(new Set());
+    setHasSearched(true);
+    setFiltersExpanded(false);
+    if (currentPage === 1) {
+      fetchDespesas(draftFilters, 1);
+    } else {
+      setCurrentPage(1);
+    }
   }
 
   const exportColumns = [
@@ -416,6 +440,9 @@ export default function Despesas() {
   }
 
   const years = Array.from({ length: 10 }, (_, index) => String(new Date().getFullYear() - 3 + index));
+  const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const showingFrom = totalCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const showingTo = Math.min(currentPage * PAGE_SIZE, totalCount);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -470,9 +497,28 @@ export default function Despesas() {
 
       <Card className="listing-filter-card">
         <CardHeader className="px-0 pt-0">
-          <CardTitle className="text-base">Filtros</CardTitle>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-base">Filtros</CardTitle>
+              {hasSearched && !filtersExpanded && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {totalCount} despesa(s) encontrada(s). Página {currentPage} de {pageCount}.
+                </p>
+              )}
+            </div>
+            {hasSearched && (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => setFiltersExpanded((current) => !current)}>
+                  {filtersExpanded ? 'Ocultar filtros' : 'Alterar filtros'}
+                </Button>
+                <Button variant="outline" size="sm" onClick={clearFilters}>
+                  <FilterX className="mr-2 h-4 w-4" /> Limpar filtros
+                </Button>
+              </div>
+            )}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4 px-0 pb-0">
+        {filtersExpanded && <CardContent className="space-y-4 px-0 pb-0">
           <div className="listing-filter-grid">
             <div className="listing-filter-field col-span-12 md:col-span-3">
               <label className="listing-filter-label">Categoria</label>
@@ -565,7 +611,7 @@ export default function Despesas() {
               <DateFilter value={draftFilters.pagamentoFim} onChange={(value) => updateDraft('pagamentoFim', value)} placeholder="Selecione a data" />
             </div>
             <div className="col-span-12 md:col-span-3 flex items-end">
-              <Button className="h-10 w-full" onClick={() => setAppliedFilters(draftFilters)}>Filtrar</Button>
+              <Button className="h-10 w-full" onClick={applyFilters}>Filtrar</Button>
             </div>
             <div className="col-span-12 md:col-span-3 flex items-end">
               <Button variant="outline" className="h-10 w-full" onClick={clearFilters}>
@@ -573,7 +619,7 @@ export default function Despesas() {
               </Button>
             </div>
           </div>
-        </CardContent>
+        </CardContent>}
       </Card>
 
       {selected.size > 0 && (
@@ -628,7 +674,13 @@ export default function Despesas() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {!hasSearched ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
+                    Nenhum lançamento exibido. Aplique os filtros para visualizar os resultados.
+                  </td>
+                </tr>
+              ) : loading ? (
                 <tr>
                   <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">Carregando...</td>
                 </tr>
@@ -693,13 +745,28 @@ export default function Despesas() {
             {filtered.length > 0 && (
               <tfoot>
                 <tr className="bg-muted/40">
-                  <td colSpan={7} className="px-3 py-3 text-right text-sm font-semibold">Total</td>
+                  <td colSpan={7} className="px-3 py-3 text-right text-sm font-semibold">Total da página</td>
                   <td className="px-3 py-3 text-right text-sm font-semibold text-destructive">{formatCurrency(total)}</td>
                   <td colSpan={2} />
                 </tr>
               </tfoot>
             )}
           </table>
+          {hasSearched && totalCount > 0 && (
+            <div className="flex flex-col gap-3 border-t p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-muted-foreground">
+                Página {currentPage} de {pageCount} • {showingFrom}-{showingTo} de {totalCount}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" className="h-9 rounded-lg" disabled={currentPage <= 1 || loading} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
+                  Anterior
+                </Button>
+                <Button variant="outline" size="sm" className="h-9 rounded-lg" disabled={currentPage >= pageCount || loading} onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}>
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -732,7 +799,10 @@ export default function Despesas() {
           categories={categorias}
           subcategories={subcategorias}
           accounts={contas}
-          onImported={loadData}
+          onImported={() => {
+            loadData();
+            if (hasSearched) fetchDespesas(appliedFilters, currentPage);
+          }}
         />
       )}
     </div>
