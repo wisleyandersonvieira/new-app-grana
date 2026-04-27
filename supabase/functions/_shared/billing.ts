@@ -205,7 +205,6 @@ export async function syncStripeDataForUser({
       trial_fim: toIso(subscription.trial_end),
       current_period_start: toIso(subscription.current_period_start),
       current_period_end: toIso(subscription.current_period_end),
-      data_expiracao: toIso(subscription.current_period_end),
       data_cancelamento: toIso(subscription.canceled_at),
       cancel_at_period_end: subscription.cancel_at_period_end,
       cancel_at: toIso(subscription.cancel_at),
