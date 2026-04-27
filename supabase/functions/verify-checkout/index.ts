@@ -40,24 +40,53 @@ serve(async (req) => {
     });
 
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["subscription"],
+      expand: ["subscription", "subscription.items.data.price"],
+    });
+    console.log("[verify-checkout] session", {
+      id: session.id,
+      status: session.status,
+      payment_status: session.payment_status,
+      customer: session.customer,
+      email: session.customer_details?.email,
+      mode: session.mode,
     });
 
     if (session.status !== "complete") {
-      throw new Error("Checkout session not completed");
+      throw new Error(`Checkout session not completed (status=${session.status})`);
     }
-    if (session.customer_details?.email && session.customer_details.email !== user.email) {
+    const sessionEmail = session.customer_details?.email?.toLowerCase();
+    const userEmail = user.email?.toLowerCase();
+    if (sessionEmail && userEmail && sessionEmail !== userEmail) {
       throw new Error("Forbidden");
     }
 
-    const subscription = session.subscription as Stripe.Subscription;
+    const subscription = session.subscription as Stripe.Subscription | null;
     if (!subscription) throw new Error("No subscription found");
+    console.log("[verify-checkout] subscription", {
+      id: subscription.id,
+      status: subscription.status,
+      current_period_end: subscription.current_period_end,
+      trial_end: (subscription as any).trial_end,
+    });
 
-    const priceId = subscription.items.data[0]?.price?.id;
-    const plano = priceId === "price_1T91XWGbo9PdwdD38zBjKpDx" ? "mensal" : "anual";
-    const periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+    const priceId = subscription.items.data[0]?.price?.id ?? null;
+    // Map known price IDs -> plan; default to "mensal"
+    const PLAN_BY_PRICE: Record<string, string> = {
+      price_1TLP0bGrbv5UzR86IczFvXwg: "mensal",
+      price_1TLP1AGrbv5UzR86KwUWNdGZ: "anual",
+      price_1T91XWGbo9PdwdD38zBjKpDx: "mensal",
+    };
+    const plano = (priceId && PLAN_BY_PRICE[priceId]) || "mensal";
 
-    await serviceClient
+    const periodEndUnix =
+      subscription.current_period_end ??
+      (subscription as any).trial_end ??
+      null;
+    const periodEnd = periodEndUnix
+      ? new Date(periodEndUnix * 1000).toISOString()
+      : null;
+
+    const { error: updError } = await serviceClient
       .from("assinaturas")
       .update({
         status: "active",
@@ -69,6 +98,10 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       })
       .eq("usuario_id", user.id);
+    if (updError) {
+      console.error("[verify-checkout] update error", updError);
+      throw new Error(`DB update failed: ${updError.message}`);
+    }
     await writeSecurityEvent(serviceClient, req, { event: "checkout_verified", user_id: user.id, actor_id: user.id, metadata: { sessionId } });
 
     return new Response(
