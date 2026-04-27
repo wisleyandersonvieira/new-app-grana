@@ -75,10 +75,16 @@ type CategoryInsight = {
 
 type MetaProgress = {
   label: string;
+  natureza: 'receita' | 'despesa';
   valorMeta: number;
   valorRealizado: number;
   pct: number;
   tone: 'success' | 'warning' | 'destructive';
+  status: string;
+  detail: string;
+  statusClassName: string;
+  progressClassName: string;
+  priority: number;
 };
 
 type AlertItem = {
@@ -148,6 +154,72 @@ const getCategoryName = (row: EntryRow) => row.categorias?.nome?.trim() || 'Sem 
 
 const getCategoryNameById = (categoryId: string | null | undefined, categoryMap: Map<string, string>) =>
   (categoryId ? categoryMap.get(categoryId)?.trim() : '') || 'Sem categoria';
+
+const getMetaPerformance = (natureza: 'receita' | 'despesa', pct: number, diff: number) => {
+  if (natureza === 'receita') {
+    if (pct >= 100) {
+      return {
+        tone: 'success' as const,
+        status: 'Atingida',
+        detail: `Superou a meta em ${formatCurrency(Math.max(0, diff))}.`,
+        statusClassName: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        progressClassName: '[&>div]:bg-emerald-500',
+        priority: 3,
+      };
+    }
+
+    if (pct >= 60) {
+      return {
+        tone: 'warning' as const,
+        status: 'Em andamento',
+        detail: `Faltam ${formatCurrency(Math.abs(diff))}.`,
+        statusClassName: 'border-amber-200 bg-amber-50 text-amber-700',
+        progressClassName: '[&>div]:bg-amber-500',
+        priority: 2,
+      };
+    }
+
+    return {
+      tone: 'destructive' as const,
+      status: 'Abaixo do esperado',
+      detail: `Faltam ${formatCurrency(Math.abs(diff))}.`,
+      statusClassName: 'border-rose-200 bg-rose-50 text-rose-700',
+      progressClassName: '[&>div]:bg-rose-500',
+      priority: 1,
+    };
+  }
+
+  if (pct > 100) {
+    return {
+      tone: 'destructive' as const,
+      status: 'Acima do orçamento',
+      detail: `${formatCurrency(diff)} acima.`,
+      statusClassName: 'border-rose-200 bg-rose-50 text-rose-700',
+      progressClassName: '[&>div]:bg-rose-500',
+      priority: 1,
+    };
+  }
+
+  if (pct >= 85) {
+    return {
+      tone: 'warning' as const,
+      status: 'No limite',
+      detail: `Restam ${formatCurrency(Math.abs(diff))}.`,
+      statusClassName: 'border-amber-200 bg-amber-50 text-amber-700',
+      progressClassName: '[&>div]:bg-amber-500',
+      priority: 2,
+    };
+  }
+
+  return {
+    tone: 'success' as const,
+    status: 'Dentro do orçamento',
+    detail: `Restam ${formatCurrency(Math.abs(diff))}.`,
+    statusClassName: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    progressClassName: '[&>div]:bg-emerald-500',
+    priority: 3,
+  };
+};
 
 const aggregateByCategory = (currentRows: EntryRow[], previousRows: EntryRow[]) => {
   const previousMap = new Map<string, number>();
@@ -302,16 +374,18 @@ const buildMetas = (
     }
 
     const pct = meta.valor > 0 ? (valorRealizado / meta.valor) * 100 : 0;
-    const tone = pct <= 80 ? 'success' : pct <= 100 ? 'warning' : 'destructive';
+    const diff = valorRealizado - meta.valor;
+    const performance = getMetaPerformance(natureza, pct, diff);
 
     return {
       label,
+      natureza,
       valorMeta: meta.valor,
       valorRealizado,
       pct,
-      tone,
+      ...performance,
     } as MetaProgress;
-  });
+  }).sort((left, right) => left.priority - right.priority || right.pct - left.pct);
 };
 
 const buildAlerts = (
@@ -1001,43 +1075,45 @@ export default function Dashboard() {
             {profile?.nome || 'Você'} acompanha aqui o realizado contra o planejado em {monthName}.
           </p>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           {(dashboard?.metas ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhuma meta cadastrada para {monthName}/{year}.</p>
           ) : (
-            dashboard?.metas.map((meta, index) => (
-              <div key={`${meta.label}-${index}`} className="rounded-2xl border bg-muted/20 p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{meta.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatCurrency(meta.valorRealizado)} de {formatCurrency(meta.valorMeta)}
-                    </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {dashboard?.metas.map((meta, index) => (
+                <div key={`${meta.label}-${index}`} className="rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{meta.label}</p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{meta.detail}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${meta.statusClassName}`}>
+                      {meta.status}
+                    </span>
                   </div>
-                  <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                      meta.tone === 'success'
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : meta.tone === 'warning'
-                          ? 'bg-amber-50 text-amber-700'
-                          : 'bg-rose-50 text-rose-700'
-                    }`}
-                  >
-                    {meta.pct <= 80 ? 'OK' : meta.pct <= 100 ? 'Atencao' : 'Estourado'} | {meta.pct.toFixed(0)}%
-                  </span>
+
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <p className="text-muted-foreground">Realizado</p>
+                      <p className="mt-0.5 truncate font-semibold">{formatCurrency(meta.valorRealizado)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{meta.natureza === 'receita' ? 'Meta' : 'Orçamento'}</p>
+                      <p className="mt-0.5 truncate font-semibold">{formatCurrency(meta.valorMeta)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-muted-foreground">Progresso</p>
+                      <p className="mt-0.5 font-semibold">{meta.pct.toFixed(0)}%</p>
+                    </div>
+                  </div>
+
+                  <Progress
+                    value={clamp(meta.pct, 0, 100)}
+                    className={`mt-3 h-2 ${meta.progressClassName}`}
+                  />
                 </div>
-                <Progress
-                  value={clamp(meta.pct, 0, 100)}
-                  className={`mt-3 h-2.5 ${
-                    meta.tone === 'success'
-                      ? '[&>div]:bg-emerald-500'
-                      : meta.tone === 'warning'
-                        ? '[&>div]:bg-amber-500'
-                        : '[&>div]:bg-rose-500'
-                  }`}
-                />
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
