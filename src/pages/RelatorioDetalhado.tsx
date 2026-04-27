@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, getCurrentCompetencia, getMonthName } from '@/lib/financial';
 import { exportToExcel } from '@/lib/export';
 import { isCreditCardCategoryName } from '@/lib/credit-card-category';
+import { getMonthDateRange } from '@/lib/comparativo-mensal';
 
 type Row = { data_pagamento: string; descricao: string; categoria: string; subcategoria: string; receita: number; despesa: number };
 type ItemFaturaReport = {
