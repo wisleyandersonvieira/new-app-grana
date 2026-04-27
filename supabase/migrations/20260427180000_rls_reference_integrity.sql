@@ -129,8 +129,6 @@ BEGIN
   PERFORM public.assert_owned_conta(NEW.usuario_id, NEW.conta_id);
   PERFORM public.assert_owned_categoria(NEW.usuario_id, NEW.categoria_id);
   PERFORM public.assert_owned_subcategoria(NEW.usuario_id, NEW.subcategoria_id, NEW.categoria_id);
-  PERFORM public.assert_owned_despesa(NEW.usuario_id, NEW.despesa_pai_id);
-  PERFORM public.assert_owned_fatura(NEW.usuario_id, public.try_uuid(NEW.lote_id));
   RETURN NEW;
 END;
 $$;
@@ -143,6 +141,8 @@ BEGIN
   PERFORM public.assert_owned_conta(NEW.usuario_id, NEW.conta_id);
   PERFORM public.assert_owned_categoria(NEW.usuario_id, NEW.categoria_id);
   PERFORM public.assert_owned_subcategoria(NEW.usuario_id, NEW.subcategoria_id, NEW.categoria_id);
+  PERFORM public.assert_owned_despesa(NEW.usuario_id, NEW.despesa_pai_id);
+  PERFORM public.assert_owned_fatura(NEW.usuario_id, public.try_uuid(NEW.lote_id));
   RETURN NEW;
 END;
 $$;
