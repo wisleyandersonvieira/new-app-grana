@@ -199,4 +199,219 @@
     line-height: 1.25rem;
     max-height: 2.5rem;
   }
+
+  .mobile-menu-open {
+    overflow: hidden;
+  }
+
+  @media (max-width: 767px) {
+    body {
+      background: hsl(var(--background));
+    }
+
+    .mobile-content {
+      width: 100%;
+      min-width: 0;
+      padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+    }
+
+    .page-header {
+      align-items: flex-start;
+      gap: 0.85rem;
+      flex-direction: column;
+    }
+
+    .page-header h1 {
+      font-size: 1.45rem;
+      line-height: 1.18;
+    }
+
+    .form-container,
+    .listing-filter-card {
+      width: 100%;
+      border-radius: 1rem;
+      padding: 1rem;
+    }
+
+    .filter-bar {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.85rem;
+      padding: 1rem;
+      border-radius: 1rem;
+    }
+
+    .listing-filter-grid {
+      grid-template-columns: 1fr;
+      gap: 0.85rem;
+    }
+
+    .listing-filter-grid > * {
+      grid-column: 1 / -1 !important;
+    }
+
+    .listing-filter-label {
+      font-size: 0.68rem;
+      letter-spacing: 0.12em;
+    }
+
+    input,
+    select,
+    textarea,
+    [role="combobox"] {
+      min-height: 2.75rem;
+      font-size: 1rem;
+    }
+
+    button,
+    a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-content button {
+      min-height: 2.5rem;
+    }
+
+    .mobile-content > div {
+      max-width: 100%;
+    }
+
+    .mobile-content .rounded-\[28px\] {
+      border-radius: 1.25rem;
+    }
+
+    .mobile-content [class*="rounded-2xl"] {
+      border-radius: 1rem;
+    }
+
+    .mobile-content .p-6 {
+      padding: 1rem;
+    }
+
+    .mobile-content .px-6 {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+
+    .mobile-content .py-6 {
+      padding-top: 1rem;
+      padding-bottom: 1rem;
+    }
+
+    .mobile-content .text-3xl,
+    .mobile-content .md\:text-4xl {
+      font-size: 1.75rem;
+      line-height: 2.05rem;
+    }
+
+    .stat-card {
+      padding: 1rem;
+      border-radius: 1rem;
+    }
+
+    .stat-card:hover {
+      transform: none;
+    }
+
+    .stat-card .whitespace-nowrap {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .listing-table {
+      display: block;
+      min-width: 0;
+    }
+
+    .listing-table thead {
+      display: none;
+    }
+
+    .listing-table tbody {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .listing-table tr {
+      display: grid;
+      gap: 0.65rem;
+      border: 1px solid hsl(var(--border));
+      border-radius: 1rem;
+      background: hsl(var(--card));
+      padding: 0.85rem;
+      box-shadow: var(--card-shadow);
+    }
+
+    .listing-table td {
+      display: grid;
+      grid-template-columns: minmax(6.75rem, 38%) 1fr;
+      align-items: center;
+      gap: 0.75rem;
+      min-height: 2rem;
+      border: 0;
+      padding: 0;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .listing-table td::before {
+      color: hsl(var(--muted-foreground));
+      content: attr(data-label);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    .listing-table td:nth-child(1)::before { content: "Seleção"; }
+    .listing-table td:nth-child(2)::before { content: "Vencimento"; }
+    .listing-table td:nth-child(3)::before { content: "Categoria"; }
+    .listing-table td:nth-child(4)::before { content: "Subcategoria"; }
+    .listing-table td:nth-child(5)::before { content: "Descrição"; }
+    .listing-table td:nth-child(6)::before { content: "Parcela"; }
+    .listing-table td:nth-child(7)::before { content: "Competência"; }
+    .listing-table td:nth-child(8)::before { content: "Valor"; }
+    .listing-table td:nth-child(9)::before { content: "Pagamento"; }
+    .listing-table td:nth-child(10)::before { content: "Ações"; }
+
+    .listing-table td:last-child {
+      grid-template-columns: 1fr;
+      text-align: left;
+    }
+
+    .listing-table td:last-child::before {
+      display: none;
+    }
+
+    .listing-table td:last-child > * {
+      justify-content: flex-end;
+    }
+
+    .listing-table td[colspan] {
+      display: block;
+      text-align: center;
+    }
+
+    .listing-table td[colspan]::before {
+      display: none;
+    }
+
+    .listing-description {
+      -webkit-line-clamp: 3;
+      max-height: none;
+      text-align: right;
+    }
+
+    .overflow-x-auto {
+      margin-left: -0.25rem;
+      margin-right: -0.25rem;
+      padding: 0 0.25rem 0.35rem;
+      scrollbar-width: thin;
+    }
+
+    .overflow-x-auto table {
+      min-width: 680px;
+    }
+  }
 }

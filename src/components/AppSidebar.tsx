@@ -4,7 +4,7 @@ import {
   CreditCard, ArrowLeftRight, LogOut, DollarSign, ChevronRight,
   PlusCircle, List, BarChart3, FileText, ClipboardList, Users,
   CalendarOff, Layers, Settings, Receipt, Shield, ScrollText, UserCog,
-  Sparkles, UserCircle2,
+  Sparkles, UserCircle2, X,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -94,7 +94,12 @@ const menuItems: MenuItem[] = [
   },
 ];
 
-export function AppSidebar() {
+type AppSidebarProps = {
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
+};
+
+export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
@@ -118,15 +123,28 @@ export function AppSidebar() {
     children?.some((child) => location.pathname === child.url) ?? false;
 
   return (
-    <aside className="fixed left-0 top-0 z-40 flex h-screen w-[260px] flex-col bg-sidebar border-r border-sidebar-border">
-      <div className="flex items-center gap-3 px-6 py-7">
+    <aside
+      className={cn(
+        'fixed left-0 top-0 z-40 flex h-[100svh] w-[min(86vw,320px)] flex-col border-r border-sidebar-border bg-sidebar shadow-2xl shadow-slate-950/30 transition-transform duration-300 ease-out md:h-screen md:w-[260px] md:translate-x-0 md:shadow-none',
+        mobileOpen ? 'translate-x-0' : '-translate-x-full',
+      )}
+    >
+      <div className="flex items-center gap-3 px-5 py-5 md:px-6 md:py-7">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sidebar-primary to-accent shadow-lg shadow-sidebar-primary/30">
           <DollarSign className="h-5 w-5 text-white" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <span className="text-lg font-bold text-sidebar-foreground tracking-tight">Grana</span>
           <p className="text-[11px] text-sidebar-foreground/40 font-medium -mt-0.5">Gestão Financeira</p>
         </div>
+        <button
+          type="button"
+          aria-label="Fechar menu"
+          className="flex h-10 w-10 items-center justify-center rounded-xl text-sidebar-foreground/65 transition hover:bg-sidebar-accent hover:text-sidebar-foreground md:hidden"
+          onClick={() => onMobileOpenChange?.(false)}
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
       <div className="mx-5 h-px bg-sidebar-border/60" />
@@ -142,7 +160,7 @@ export function AppSidebar() {
                   to={item.url}
                   end
                   className={cn(
-                    'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-150',
+                    'group flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-150 md:rounded-lg md:px-3 md:py-2.5 md:text-[13px]',
                     active
                       ? 'bg-sidebar-primary text-white shadow-md shadow-sidebar-primary/20'
                       : 'text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground'
@@ -150,7 +168,7 @@ export function AppSidebar() {
                   activeClassName=""
                 >
                   <item.icon className={cn(
-                    'h-[17px] w-[17px] shrink-0 transition-colors',
+                    'h-[18px] w-[18px] shrink-0 transition-colors md:h-[17px] md:w-[17px]',
                     active ? 'text-white' : 'text-sidebar-foreground/45 group-hover:text-sidebar-foreground/70'
                   )} />
                   <span>{item.title}</span>
@@ -166,14 +184,14 @@ export function AppSidebar() {
                 <button
                   onClick={() => toggleMenu(item.title)}
                   className={cn(
-                    'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-150',
+                    'group flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-150 md:rounded-lg md:px-3 md:py-2.5 md:text-[13px]',
                     hasActiveChild
                       ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                       : 'text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground',
                   )}
                 >
                   <item.icon className={cn(
-                    'h-[17px] w-[17px] shrink-0 transition-colors',
+                    'h-[18px] w-[18px] shrink-0 transition-colors md:h-[17px] md:w-[17px]',
                     hasActiveChild ? 'text-sidebar-primary' : 'text-sidebar-foreground/45 group-hover:text-sidebar-foreground/70'
                   )} />
                   <span className="flex-1 text-left">{item.title}</span>
@@ -191,7 +209,7 @@ export function AppSidebar() {
                     isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0',
                   )}
                 >
-                  <div className="ml-[22px] mt-0.5 flex flex-col gap-px border-l border-sidebar-border/50 pl-3 py-0.5">
+                  <div className="ml-[23px] mt-1 flex flex-col gap-1 border-l border-sidebar-border/50 py-1 pl-3 md:mt-0.5 md:gap-px md:py-0.5">
                     {item.children!.map((child) => {
                       const childActive = location.pathname === child.url;
                       return (
@@ -200,6 +218,7 @@ export function AppSidebar() {
                           to={child.url}
                           className={cn(
                             'group/child flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[12.5px] transition-all duration-150',
+                            'md:text-[12.5px]',
                             childActive
                               ? 'bg-sidebar-primary/15 text-sidebar-primary font-semibold'
                               : 'text-sidebar-foreground/50 hover:text-sidebar-foreground/80 hover:bg-sidebar-accent/50',
@@ -207,7 +226,7 @@ export function AppSidebar() {
                           activeClassName=""
                         >
                           <child.icon className={cn(
-                            'h-3.5 w-3.5 shrink-0',
+                            'h-4 w-4 shrink-0 md:h-3.5 md:w-3.5',
                             childActive ? 'text-sidebar-primary' : 'text-sidebar-foreground/35'
                           )} />
                           <span>{child.title}</span>
@@ -223,11 +242,11 @@ export function AppSidebar() {
       </ScrollArea>
 
       <div className="mx-5 h-px bg-sidebar-border/60" />
-      <div className="px-4 py-4">
+      <div className="px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {profile && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="mb-3 flex w-full items-center gap-3 rounded-xl border border-sidebar-border/60 bg-sidebar-accent/60 px-3 py-3 text-left transition hover:bg-sidebar-accent">
+              <button className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-sidebar-border/60 bg-sidebar-accent/60 px-3 py-3.5 text-left transition hover:bg-sidebar-accent md:rounded-xl md:py-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sidebar-primary to-accent text-[13px] font-bold text-white uppercase shadow-sm">
                   {profile.nome?.charAt(0) || 'U'}
                 </div>

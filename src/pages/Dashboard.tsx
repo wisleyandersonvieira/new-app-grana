@@ -547,14 +547,14 @@ function KpiCard({
   footer?: React.ReactNode;
 }) {
   return (
-    <div className={`stat-card rounded-2xl p-6 ${accentClassName}`}>
+    <div className={`stat-card rounded-2xl p-4 sm:p-5 lg:p-6 ${accentClassName}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <div className="whitespace-nowrap text-2xl font-bold tracking-tight tabular-nums">{value}</div>
+          <div className="text-[1.45rem] font-bold leading-tight tracking-tight tabular-nums sm:text-2xl">{value}</div>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${iconClassName}`}>
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl sm:h-11 sm:w-11 ${iconClassName}`}>
           <Icon className="h-5 w-5" />
         </div>
       </div>
@@ -836,14 +836,14 @@ export default function Dashboard() {
     (dashboard?.resultadoMes ?? 0) >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50';
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <section className="overflow-hidden rounded-[28px] border bg-[linear-gradient(135deg,hsl(var(--primary))/0.12,white_48%,hsl(var(--accent))/0.08)] p-6 shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+    <div className="dashboard-page space-y-4 animate-fade-in sm:space-y-6">
+      <section className="overflow-hidden rounded-[20px] border bg-[linear-gradient(135deg,hsl(var(--primary))/0.12,white_48%,hsl(var(--accent))/0.08)] p-4 shadow-sm sm:rounded-[28px] sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-4">
             <div className="space-y-2">
-              <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary/70">Central Financeira</p>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary/70 sm:text-sm sm:tracking-[0.18em]">Central Financeira</p>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight md:text-4xl">{monthName} {year}</h1>
+                <h1 className="text-[1.75rem] font-bold leading-tight tracking-tight sm:text-3xl md:text-4xl">{monthName} {year}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Visão consolidada para decidir mais rápido e agir com confiança.
                 </p>
@@ -857,11 +857,11 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-col gap-3 lg:items-end">
-            <div className="flex items-center gap-1 rounded-2xl border bg-white/80 p-1 shadow-sm backdrop-blur">
+            <div className="grid grid-cols-[2.5rem_1fr_2.5rem] items-center gap-1 rounded-2xl border bg-white/80 p-1 shadow-sm backdrop-blur">
               <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => setCompetencia(offsetCompetencia(competencia, -1))}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <div className="min-w-[180px] px-2 text-center">
+              <div className="min-w-0 px-2 text-center">
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Competência</p>
                 <p className="text-lg font-semibold">{monthName} {year}</p>
               </div>
@@ -870,7 +870,7 @@ export default function Dashboard() {
               </Button>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid gap-2 sm:flex sm:flex-wrap">
               <Button className="rounded-xl px-4" onClick={() => navigate('/nova-receita')}>
                 <Plus className="mr-2 h-4 w-4" /> Nova Receita
               </Button>
@@ -882,7 +882,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           title="Saldo Total"
           value={loading ? '...' : formatCurrency(dashboard?.saldoTotal ?? 0)}
@@ -944,14 +944,14 @@ export default function Dashboard() {
         />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
+      <section className="grid gap-3 sm:gap-4 xl:grid-cols-[1.65fr_1fr]">
         <Card className="rounded-2xl border shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Evolução Mensal</CardTitle>
             <p className="text-sm text-muted-foreground">Receitas e despesas pagas nos últimos 12 meses</p>
           </CardHeader>
           <CardContent>
-            <ChartContainer className="h-[320px] w-full" config={chartConfig}>
+            <ChartContainer className="h-[240px] w-full sm:h-[320px]" config={chartConfig}>
               <LineChart data={dashboard?.monthlySeries ?? []} margin={{ top: 12, right: 12, left: 4, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} />
@@ -1009,7 +1009,7 @@ export default function Dashboard() {
         </Card>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      <section className="grid gap-3 sm:gap-4 xl:grid-cols-2">
         {[
           {
             title: 'Despesas por categoria',
