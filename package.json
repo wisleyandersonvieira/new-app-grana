@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "security:rls": "node scripts/security/rls-ab-test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

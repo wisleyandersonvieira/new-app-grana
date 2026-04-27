@@ -1,25 +1,31 @@
 project_id = "mfbvobfuoeplmcykfxwo"
 
 [functions.create-checkout]
-verify_jwt = false
+verify_jwt = true
 
 [functions.check-subscription]
-verify_jwt = false
+verify_jwt = true
 
 [functions.customer-portal]
-verify_jwt = false
+verify_jwt = true
 
 [functions.manage-users]
-verify_jwt = false
+verify_jwt = true
 
 [functions.verify-checkout]
-verify_jwt = false
+verify_jwt = true
 
 [functions.stripe-webhook]
 verify_jwt = false
 
 [functions.cancel-subscription]
-verify_jwt = false
+verify_jwt = true
+
+[functions.resume-subscription]
+verify_jwt = true
+
+[functions.account-data]
+verify_jwt = true
 
 [functions.expire-trials]
 verify_jwt = false
