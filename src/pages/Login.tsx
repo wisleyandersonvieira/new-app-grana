@@ -39,7 +39,13 @@ export default function Login() {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        const { data: profile } = await supabase.from('profiles').select('status').eq('user_id', data.user.id).single();
+        const { data: profile } = await supabase.from('profiles').select('status, access_blocked').eq('user_id', data.user.id).single();
+        if (profile?.access_blocked) {
+          await supabase.auth.signOut();
+          toast.error('Usuário bloqueado. Entre em contato com o administrador.');
+          setLoading(false);
+          return;
+        }
         if (profile?.status === 'inativo') {
           await supabase.auth.signOut();
           toast.error('Sua conta está inativa. Entre em contato com o administrador.');
