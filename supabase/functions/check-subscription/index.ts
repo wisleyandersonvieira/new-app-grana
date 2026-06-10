@@ -6,12 +6,16 @@ const buildResponse = (subscription: Record<string, unknown> | null) => {
       subscribed: false,
       status: "expired",
       message: "Nenhuma assinatura ativa encontrada.",
+      is_subscription_blocked: true,
+      subscription_block_reason: "missing_subscription",
     };
   }
 
   const status = String(subscription.status ?? "expired");
   const trialEnd = subscription.trial_fim as string | null;
   const currentPeriodEnd = (subscription.current_period_end ?? subscription.data_expiracao) as string | null;
+  const isBlocked = Boolean(subscription.is_subscription_blocked);
+  const blockReason = subscription.subscription_block_reason as string | null;
 
   const daysLeft = trialEnd
     ? Math.max(0, Math.ceil((new Date(trialEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -27,23 +31,32 @@ const buildResponse = (subscription: Record<string, unknown> | null) => {
     current_period_end: currentPeriodEnd,
     current_period_start: subscription.current_period_start ?? null,
     cancel_at_period_end: subscription.cancel_at_period_end ?? false,
+    latest_invoice_id: subscription.latest_invoice_id ?? null,
+    latest_invoice_status: subscription.latest_invoice_status ?? null,
+    latest_invoice_due_date: subscription.latest_invoice_due_date ?? null,
+    latest_invoice_hosted_url: subscription.latest_invoice_hosted_url ?? null,
+    is_subscription_blocked: isBlocked,
+    subscription_block_reason: blockReason,
+    subscription_checked_at: subscription.subscription_checked_at ?? subscription.synced_at ?? null,
     amount: subscription.valor ?? null,
     frequency: subscription.frequencia ?? null,
     payment_method: subscription.payment_method_type ?? null,
     card_brand: subscription.payment_brand ?? null,
     card_last4: subscription.payment_last4 ?? null,
     message:
-      status === "trial"
-        ? daysLeft === 0
-          ? "Seu período de teste expirou."
-          : undefined
-        : status === "past_due"
-          ? "Tivemos um problema com seu pagamento. Atualize sua forma de pagamento."
-          : status === "canceled"
-            ? "Sua assinatura será encerrada ao fim do período atual."
-            : status === "expired"
-              ? "Sua assinatura expirou. Escolha um plano para continuar."
-              : undefined,
+      isBlocked
+        ? "Encontramos uma pendência no pagamento da sua assinatura. Para continuar usando todos os recursos do sistema, regularize sua fatura."
+        : status === "trial"
+          ? daysLeft === 0
+            ? "Seu período de teste expirou."
+            : undefined
+          : status === "past_due"
+            ? "Tivemos um problema com seu pagamento. Atualize sua forma de pagamento."
+            : status === "canceled"
+              ? "Sua assinatura será encerrada ao fim do período atual."
+              : status === "expired"
+                ? "Sua assinatura expirou. Escolha um plano para continuar."
+                : undefined,
   };
 };
 

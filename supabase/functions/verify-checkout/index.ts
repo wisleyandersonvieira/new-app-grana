@@ -106,6 +106,9 @@ serve(async (req) => {
         current_period_start: periodStart,
         current_period_end: periodEnd,
         trial_fim: trialEnd,
+        is_subscription_blocked: false,
+        subscription_block_reason: null,
+        subscription_checked_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("usuario_id", user.id);

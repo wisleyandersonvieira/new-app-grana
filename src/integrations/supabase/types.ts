@@ -50,6 +50,11 @@ export type Database = {
           current_period_start: string | null
           frequencia: string | null
           id: string
+          is_subscription_blocked: boolean
+          latest_invoice_due_date: string | null
+          latest_invoice_hosted_url: string | null
+          latest_invoice_id: string | null
+          latest_invoice_status: string | null
           moeda: string | null
           payment_brand: string | null
           payment_exp_month: number | null
@@ -63,6 +68,8 @@ export type Database = {
           stripe_product_id: string | null
           stripe_status: string | null
           stripe_subscription_id: string | null
+          subscription_block_reason: string | null
+          subscription_checked_at: string | null
           synced_at: string | null
           trial_fim: string | null
           trial_inicio: string | null
@@ -78,6 +85,11 @@ export type Database = {
           current_period_start?: string | null
           frequencia?: string | null
           id?: string
+          is_subscription_blocked?: boolean
+          latest_invoice_due_date?: string | null
+          latest_invoice_hosted_url?: string | null
+          latest_invoice_id?: string | null
+          latest_invoice_status?: string | null
           moeda?: string | null
           payment_brand?: string | null
           payment_exp_month?: number | null
@@ -91,6 +103,8 @@ export type Database = {
           stripe_product_id?: string | null
           stripe_status?: string | null
           stripe_subscription_id?: string | null
+          subscription_block_reason?: string | null
+          subscription_checked_at?: string | null
           synced_at?: string | null
           trial_fim?: string | null
           trial_inicio?: string | null
@@ -106,6 +120,11 @@ export type Database = {
           current_period_start?: string | null
           frequencia?: string | null
           id?: string
+          is_subscription_blocked?: boolean
+          latest_invoice_due_date?: string | null
+          latest_invoice_hosted_url?: string | null
+          latest_invoice_id?: string | null
+          latest_invoice_status?: string | null
           moeda?: string | null
           payment_brand?: string | null
           payment_exp_month?: number | null
@@ -119,6 +138,8 @@ export type Database = {
           stripe_product_id?: string | null
           stripe_status?: string | null
           stripe_subscription_id?: string | null
+          subscription_block_reason?: string | null
+          subscription_checked_at?: string | null
           synced_at?: string | null
           trial_fim?: string | null
           trial_inicio?: string | null

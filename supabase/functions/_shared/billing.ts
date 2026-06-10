@@ -113,6 +113,59 @@ export const formatStripeStatus = (status?: string | null) => {
 
 const toIso = (unix?: number | null) => (typeof unix === "number" ? new Date(unix * 1000).toISOString() : null);
 
+const PAYMENT_BLOCKED_SUBSCRIPTION_STATUSES = new Set([
+  "past_due",
+  "unpaid",
+  "canceled",
+  "incomplete",
+  "incomplete_expired",
+  "paused",
+]);
+
+const isInvoiceOpenAndOverdue = (invoice: Stripe.Invoice) =>
+  invoice.status === "open" &&
+  (invoice.amount_remaining ?? 0) > 0 &&
+  typeof invoice.due_date === "number" &&
+  invoice.due_date * 1000 < Date.now();
+
+export const getSubscriptionBlockState = (
+  subscription: Stripe.Subscription | null,
+  invoices: Stripe.Invoice[],
+) => {
+  const latestInvoice = invoices[0] ?? null;
+  const overdueInvoice = invoices.find(isInvoiceOpenAndOverdue) ?? null;
+
+  if (!subscription) {
+    return {
+      isBlocked: true,
+      reason: "missing_subscription",
+      latestInvoice,
+    };
+  }
+
+  if (PAYMENT_BLOCKED_SUBSCRIPTION_STATUSES.has(subscription.status)) {
+    return {
+      isBlocked: true,
+      reason: `subscription_${subscription.status}`,
+      latestInvoice,
+    };
+  }
+
+  if (overdueInvoice) {
+    return {
+      isBlocked: true,
+      reason: "invoice_open_overdue",
+      latestInvoice: overdueInvoice,
+    };
+  }
+
+  return {
+    isBlocked: false,
+    reason: null,
+    latestInvoice,
+  };
+};
+
 type SyncArgs = {
   supabase: ReturnType<typeof createServiceClient>;
   stripe: Stripe;
@@ -190,6 +243,8 @@ export async function syncStripeDataForUser({
   const price = subscription?.items.data[0]?.price ?? null;
   const plan = getPlanFromPrice(price);
   const normalizedStatus = formatStripeStatus(subscription?.status ?? null);
+  const blockState = getSubscriptionBlockState(subscription, invoices.data);
+  const latestInvoice = blockState.latestInvoice;
 
   if (subscription) {
     await supabase.from("assinaturas").upsert({
@@ -216,6 +271,13 @@ export async function syncStripeDataForUser({
       payment_last4: paymentMethod?.card?.last4 ?? null,
       payment_exp_month: paymentMethod?.card?.exp_month ?? null,
       payment_exp_year: paymentMethod?.card?.exp_year ?? null,
+      latest_invoice_id: latestInvoice?.id ?? null,
+      latest_invoice_status: latestInvoice?.status ?? null,
+      latest_invoice_due_date: latestInvoice?.due_date ? new Date(latestInvoice.due_date * 1000).toISOString() : null,
+      latest_invoice_hosted_url: latestInvoice?.hosted_invoice_url ?? null,
+      is_subscription_blocked: blockState.isBlocked,
+      subscription_block_reason: blockState.reason,
+      subscription_checked_at: new Date().toISOString(),
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: "usuario_id" });

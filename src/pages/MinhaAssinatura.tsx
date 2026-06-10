@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Crown, Clock, AlertTriangle, XCircle, CreditCard,
-  Calendar, Loader2, ExternalLink, RefreshCw,
+  Loader2, ExternalLink, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +21,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   trial: { label: 'Período de Teste', color: 'bg-[hsl(45,100%,90%)] text-[hsl(35,80%,30%)]', icon: Clock },
   active: { label: 'Ativa', color: 'bg-green-100 text-green-800', icon: Crown },
   past_due: { label: 'Pagamento Pendente', color: 'bg-[hsl(30,100%,92%)] text-[hsl(25,80%,30%)]', icon: AlertTriangle },
+  unpaid: { label: 'Pagamento Pendente', color: 'bg-[hsl(30,100%,92%)] text-[hsl(25,80%,30%)]', icon: AlertTriangle },
+  incomplete: { label: 'Pagamento Pendente', color: 'bg-[hsl(30,100%,92%)] text-[hsl(25,80%,30%)]', icon: AlertTriangle },
+  incomplete_expired: { label: 'Pagamento Pendente', color: 'bg-[hsl(30,100%,92%)] text-[hsl(25,80%,30%)]', icon: AlertTriangle },
+  paused: { label: 'Pausada', color: 'bg-[hsl(30,100%,92%)] text-[hsl(25,80%,30%)]', icon: AlertTriangle },
   canceled: { label: 'Cancelada', color: 'bg-muted text-muted-foreground', icon: XCircle },
   expired: { label: 'Expirada', color: 'bg-destructive/10 text-destructive', icon: XCircle },
   admin_free: { label: 'Acesso Administrativo', color: 'bg-primary/10 text-primary', icon: Crown },
@@ -36,14 +40,34 @@ function formatDate(dateStr?: string | null): string {
   return new Date(dateStr).toLocaleDateString('pt-BR');
 }
 
+const INVOICE_STATUS_LABELS: Record<string, string> = {
+  draft: 'Rascunho',
+  open: 'Aberta',
+  paid: 'Paga',
+  uncollectible: 'Inadimplente',
+  void: 'Cancelada',
+};
+
 export default function MinhaAssinatura() {
   const { subscription, profile, refreshSubscription } = useAuth();
   const [loading, setLoading] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const status = subscription?.status ?? 'expired';
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.expired;
   const StatusIcon = config.icon;
+  const isBlocked = Boolean(subscription?.is_subscription_blocked);
+  const invoiceStatus = subscription?.latest_invoice_status
+    ? INVOICE_STATUS_LABELS[subscription.latest_invoice_status] || subscription.latest_invoice_status
+    : '—';
+
+  useEffect(() => {
+    if (!subscription || subscription.is_subscription_blocked) return;
+    if ((location.state as { from?: unknown } | null)?.from) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [location.state, navigate, subscription]);
 
   const handleCancel = async () => {
     setLoading('cancel');
@@ -71,6 +95,15 @@ export default function MinhaAssinatura() {
     } finally {
       setLoading(null);
     }
+  };
+
+  const handleRegularize = async () => {
+    if (subscription?.latest_invoice_hosted_url) {
+      window.open(subscription.latest_invoice_hosted_url, '_blank');
+      return;
+    }
+
+    await handleCustomerPortal();
   };
 
   const handleRefresh = async () => {
@@ -102,6 +135,18 @@ export default function MinhaAssinatura() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {isBlocked && (
+            <div className="flex items-start gap-3 rounded-lg border border-[hsl(30,90%,80%)] bg-[hsl(30,100%,96%)] p-4">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[hsl(25,80%,40%)]" />
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-[hsl(25,80%,24%)]">Sua assinatura precisa de atenção</p>
+                <p className="text-sm text-[hsl(25,60%,30%)]">
+                  Identificamos uma pendência no pagamento da sua assinatura. Para continuar usando todos os recursos do sistema, regularize sua fatura. Após a confirmação pelo Stripe, seu acesso será liberado automaticamente.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Trial info */}
           {status === 'trial' && subscription?.days_left !== undefined && (
             <div className="flex items-center gap-3 p-3 rounded-lg bg-[hsl(45,100%,95%)]">
@@ -118,7 +163,7 @@ export default function MinhaAssinatura() {
           )}
 
           {/* Plan & Billing details */}
-          {(status === 'active' || status === 'canceled' || status === 'past_due') && (
+          {(status === 'active' || status === 'canceled' || status === 'past_due' || status === 'unpaid' || isBlocked) && (
             <>
               <Separator />
               <div className="grid grid-cols-2 gap-4">
@@ -142,6 +187,16 @@ export default function MinhaAssinatura() {
                     {profile?.created_at ? formatDate(profile.created_at) : '—'}
                   </p>
                 </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Situação da fatura</p>
+                  <p className="text-sm font-semibold text-foreground mt-1">{invoiceStatus}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Vencimento</p>
+                  <p className="text-sm font-semibold text-foreground mt-1">
+                    {formatDate(subscription?.latest_invoice_due_date)}
+                  </p>
+                </div>
               </div>
             </>
           )}
@@ -162,6 +217,13 @@ export default function MinhaAssinatura() {
           <CardTitle className="text-lg">Ações</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {isBlocked && (
+            <Button className="w-full" onClick={handleRegularize} disabled={!!loading}>
+              {loading === 'portal' ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CreditCard className="w-4 h-4 mr-2" />}
+              Regularizar agora
+            </Button>
+          )}
+
           {/* Trial actions */}
           {status === 'trial' && (
             <Button className="w-full" onClick={() => navigate('/planos')}>
@@ -214,7 +276,7 @@ export default function MinhaAssinatura() {
           )}
 
           {/* Past Due actions */}
-          {status === 'past_due' && (
+          {status === 'past_due' && !isBlocked && (
             <Button className="w-full" onClick={handleCustomerPortal} disabled={!!loading}>
               {loading === 'portal' ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CreditCard className="w-4 h-4 mr-2" />}
               Atualizar forma de pagamento

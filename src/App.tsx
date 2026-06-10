@@ -95,6 +95,7 @@ const App = () => (
                       <Route path="/relatorios/extratos" element={<Extratos />} />
                       <Route path="/planos" element={<Planos />} />
                       <Route path="/planos/sucesso" element={<PlanosSucesso />} />
+                      <Route path="/configuracoes" element={<Navigate to="/minha-conta" replace />} />
                       <Route path="/minha-assinatura" element={<MinhaAssinatura />} />
                       <Route path="/minha-conta" element={<MinhaConta />} />
                       <Route path="/ajuda" element={<Ajuda />} />

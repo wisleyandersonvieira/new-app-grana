@@ -23,11 +23,26 @@ interface Profile {
 
 export interface SubscriptionInfo {
   subscribed: boolean;
-  status: 'trial' | 'active' | 'expired' | 'canceled' | 'past_due' | 'admin_free';
+  status: 'trial' | 'active' | 'expired' | 'canceled' | 'past_due' | 'unpaid' | 'incomplete' | 'incomplete_expired' | 'paused' | 'admin_free';
   plano?: string;
   trial_end?: string;
   days_left?: number;
   subscription_end?: string;
+  current_period_end?: string;
+  current_period_start?: string;
+  cancel_at_period_end?: boolean;
+  latest_invoice_id?: string | null;
+  latest_invoice_status?: string | null;
+  latest_invoice_due_date?: string | null;
+  latest_invoice_hosted_url?: string | null;
+  is_subscription_blocked?: boolean;
+  subscription_block_reason?: string | null;
+  subscription_checked_at?: string | null;
+  amount?: number | null;
+  frequency?: string | null;
+  payment_method?: string | null;
+  card_brand?: string | null;
+  card_last4?: string | null;
   product_id?: string;
   price_id?: string;
   message?: string;

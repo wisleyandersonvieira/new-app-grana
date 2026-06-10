@@ -103,8 +103,20 @@ type AppSidebarProps = {
 export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, signOut } = useAuth();
-  const visibleItems = menuItems.filter((item) => !item.adminOnly || profile?.is_admin);
+  const { profile, signOut, subscription } = useAuth();
+  const isSubscriptionBlocked = Boolean(subscription?.is_subscription_blocked);
+  const allowedBlockedUrls = new Set(['/minha-assinatura', '/minha-conta', '/ajuda']);
+  const visibleItems = menuItems
+    .filter((item) => !item.adminOnly || profile?.is_admin)
+    .map((item) => {
+      if (!isSubscriptionBlocked) return item;
+      if (item.title !== 'Configurações') return null;
+      return {
+        ...item,
+        children: item.children?.filter((child) => allowedBlockedUrls.has(child.url)),
+      };
+    })
+    .filter((item): item is MenuItem => Boolean(item));
 
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};

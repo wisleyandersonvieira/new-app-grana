@@ -101,7 +101,11 @@ Deno.serve(async (req) => {
         break;
       }
 
+      case "invoice.created":
+      case "invoice.updated":
+      case "invoice.payment_succeeded":
       case "invoice.paid":
+      case "invoice.finalization_failed":
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = typeof invoice.customer === "string" ? invoice.customer : null;
@@ -120,7 +124,7 @@ Deno.serve(async (req) => {
 
         await writeAdminLog(supabase, {
           user_id: userId,
-          acao: event.type === "invoice.paid" ? "stripe_invoice_paid" : "stripe_invoice_payment_failed",
+          acao: `stripe_${event.type.replaceAll(".", "_")}`,
           detalhes: {
             event_id: event.id,
             invoice_id: invoice.id,
