@@ -1150,6 +1150,10 @@ export type Database = {
         Args: { p_despesa_id: string; p_usuario_id: string }
         Returns: undefined
       }
+      assert_owned_existing_fatura_lote: {
+        Args: { p_lote_id: string; p_usuario_id: string }
+        Returns: undefined
+      }
       assert_owned_fatura: {
         Args: { p_fatura_id: string; p_usuario_id: string }
         Returns: undefined
@@ -1169,6 +1173,10 @@ export type Database = {
           p_table_name: string
         }
         Returns: boolean
+      }
+      create_default_categories_for_user: {
+        Args: { p_usuario_id: string }
+        Returns: undefined
       }
       is_admin: { Args: never; Returns: boolean }
       try_uuid: { Args: { p_value: string }; Returns: string }
