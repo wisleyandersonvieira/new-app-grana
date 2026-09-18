@@ -51,4 +51,45 @@ describe('import helpers', () => {
       paga: true,
     });
   });
+
+  it('recusa linha com categoria ou subcategoria incompativel com o tipo da importacao', () => {
+    const parsed = parseTransactionImportRows([
+      { Data: '09/04/2026', Valor: '100,00', Categoria: 'Mercado', Conta: 'Banco' },
+      { Data: '10/04/2026', Valor: '200,00', Categoria: 'Receitas', Subcategoria: 'Taxas', Conta: 'Banco' },
+    ]);
+
+    const validated = validateTransactionImportRows(
+      parsed.rows,
+      [
+        { id: 'cat-1', nome: 'Mercado', classificacao: 'despesa' },
+        { id: 'cat-2', nome: 'Receitas', classificacao: 'ambos' },
+      ],
+      [{ id: 'sub-1', nome: 'Taxas', categoria_id: 'cat-2', classificacao: 'despesa' }],
+      [{ id: 'conta-1', nome: 'Banco' }],
+      'receita',
+    );
+
+    expect(validated.rows).toEqual([]);
+    expect(validated.errors).toEqual([
+      'Linha 2: categoria "Mercado" não está disponível para receitas.',
+      'Linha 3: subcategoria "Taxas" não está disponível para receitas.',
+    ]);
+  });
+
+  it('mantem linha quando a classificacao e compativel ou "ambos"', () => {
+    const parsed = parseTransactionImportRows([
+      { Data: '09/04/2026', Valor: '100,00', Categoria: 'Mercado', Subcategoria: 'Feira', Conta: 'Banco' },
+    ]);
+
+    const validated = validateTransactionImportRows(
+      parsed.rows,
+      [{ id: 'cat-1', nome: 'Mercado', classificacao: 'despesa' }],
+      [{ id: 'sub-1', nome: 'Feira', categoria_id: 'cat-1', classificacao: 'ambos' }],
+      [{ id: 'conta-1', nome: 'Banco' }],
+      'despesa',
+    );
+
+    expect(validated.errors).toEqual([]);
+    expect(validated.rows).toHaveLength(1);
+  });
 });

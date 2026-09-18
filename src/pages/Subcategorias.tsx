@@ -10,6 +10,12 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { normalizeCategoryLabel } from '@/lib/credit-card-category';
 import { Label } from '@/components/ui/label';
+import {
+  CLASSIFICACAO_OPTIONS,
+  CLASSIFICACAO_PADRAO,
+  getClassificacaoLabel,
+  type Classificacao,
+} from '@/lib/classificacao';
 
 function toTitleCase(str: string) {
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase());
@@ -18,10 +24,12 @@ function toTitleCase(str: string) {
 type Categoria = { id: string; nome: string };
 type Subcategoria = {
   id: string; nome: string; categoria_id: string; bloqueada: boolean | null; obrigatoria: boolean | null; subcategoria_padrao: boolean | null;
+  classificacao: Classificacao;
   categorias?: { nome: string } | null;
 };
 
 type StatusFilter = 'todas' | 'ativas' | 'bloqueadas';
+type ClassificacaoFilter = 'todas' | Classificacao;
 type SortKey = 'nome' | 'categoria';
 type SortDirection = 'asc' | 'desc';
 
@@ -31,13 +39,16 @@ export default function Subcategorias() {
   const [subcategorias, setSubcategorias] = useState<Subcategoria[]>([]);
   const [nome, setNome] = useState('');
   const [categoriaId, setCategoriaId] = useState('');
+  const [classificacao, setClassificacao] = useState<Classificacao>(CLASSIFICACAO_PADRAO);
   const [editId, setEditId] = useState<string | null>(null);
   const [editNome, setEditNome] = useState('');
   const [editCategoriaId, setEditCategoriaId] = useState('');
+  const [editClassificacao, setEditClassificacao] = useState<Classificacao>(CLASSIFICACAO_PADRAO);
   const [loading, setLoading] = useState(false);
   const [filterNome, setFilterNome] = useState('');
   const [filterCategoriaId, setFilterCategoriaId] = useState('todas');
   const [filterStatus, setFilterStatus] = useState<StatusFilter>('todas');
+  const [filterClassificacao, setFilterClassificacao] = useState<ClassificacaoFilter>('todas');
   const [sortKey, setSortKey] = useState<SortKey>('nome');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
@@ -45,7 +56,7 @@ export default function Subcategorias() {
     if (!user) return;
     const [{ data: cats }, { data: subs }] = await Promise.all([
       supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).order('nome'),
-      supabase.from('subcategorias').select('id, nome, categoria_id, bloqueada, obrigatoria, subcategoria_padrao, categorias(nome)').eq('usuario_id', user.id).order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id, bloqueada, obrigatoria, subcategoria_padrao, classificacao, categorias(nome)').eq('usuario_id', user.id).order('nome'),
     ]);
     if (cats) setCategorias(cats);
     if (subs) setSubcategorias(subs as unknown as Subcategoria[]);
@@ -64,6 +75,7 @@ export default function Subcategorias() {
         if (filterCategoriaId !== 'todas' && sub.categoria_id !== filterCategoriaId) return false;
         if (filterStatus === 'ativas' && sub.bloqueada) return false;
         if (filterStatus === 'bloqueadas' && !sub.bloqueada) return false;
+        if (filterClassificacao !== 'todas' && sub.classificacao !== filterClassificacao) return false;
         return true;
       })
       .sort((left, right) => {
@@ -72,14 +84,16 @@ export default function Subcategorias() {
         const result = leftValue.localeCompare(rightValue, 'pt-BR', { sensitivity: 'base' });
         return sortDirection === 'asc' ? result : -result;
       });
-  }, [subcategorias, filterNome, filterCategoriaId, filterStatus, sortKey, sortDirection, categorias]);
+  }, [subcategorias, filterNome, filterCategoriaId, filterStatus, filterClassificacao, sortKey, sortDirection, categorias]);
 
-  const hasActiveFilters = filterNome.trim() !== '' || filterCategoriaId !== 'todas' || filterStatus !== 'todas';
+  const hasActiveFilters =
+    filterNome.trim() !== '' || filterCategoriaId !== 'todas' || filterStatus !== 'todas' || filterClassificacao !== 'todas';
 
   const clearFilters = () => {
     setFilterNome('');
     setFilterCategoriaId('todas');
     setFilterStatus('todas');
+    setFilterClassificacao('todas');
   };
 
   const toggleSort = (key: SortKey) => {
@@ -100,9 +114,15 @@ export default function Subcategorias() {
     );
     if (existing) { toast.error('Subcategoria já existe nesta categoria.'); return; }
     setLoading(true);
-    const { error } = await supabase.from('subcategorias').insert({ nome: formatted, categoria_id: categoriaId, usuario_id: user.id });
+    const { error } = await supabase.from('subcategorias').insert({ nome: formatted, categoria_id: categoriaId, usuario_id: user.id, classificacao });
     if (error) toast.error('Erro ao cadastrar');
-    else { toast.success('Subcategoria cadastrada!'); setNome(''); setCategoriaId(''); fetchData(); }
+    else {
+      toast.success('Subcategoria cadastrada!');
+      setNome('');
+      setCategoriaId('');
+      setClassificacao(CLASSIFICACAO_PADRAO);
+      fetchData();
+    }
     setLoading(false);
   };
 
@@ -114,7 +134,7 @@ export default function Subcategorias() {
     );
     if (dup) { toast.error('Subcategoria já existe nesta categoria.'); return; }
     setLoading(true);
-    const { error } = await supabase.from('subcategorias').update({ nome: formatted, categoria_id: editCategoriaId }).eq('id', id);
+    const { error } = await supabase.from('subcategorias').update({ nome: formatted, categoria_id: editCategoriaId, classificacao: editClassificacao }).eq('id', id);
     if (error) toast.error('Erro ao editar');
     else { toast.success('Subcategoria atualizada!'); setEditId(null); fetchData(); }
     setLoading(false);
@@ -164,7 +184,7 @@ export default function Subcategorias() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-5">
-          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,0.9fr)_auto] lg:items-end">
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,0.9fr)_minmax(180px,0.7fr)_auto] lg:items-end">
             <div className="space-y-2">
               <Label htmlFor="nova-subcategoria" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Nome
@@ -188,6 +208,19 @@ export default function Subcategorias() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Classificação</Label>
+              <Select value={classificacao} onValueChange={(value) => setClassificacao(value as Classificacao)}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLASSIFICACAO_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button onClick={handleAdd} disabled={loading || !nome.trim() || !categoriaId} className="h-11 rounded-xl px-5 font-semibold shadow-sm shadow-primary/20">
               <Plus className="mr-2 h-4 w-4" /> Adicionar
             </Button>
@@ -204,7 +237,7 @@ export default function Subcategorias() {
               </div>
               <div>
                 <h2 className="text-base font-semibold tracking-tight">Filtros</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Refine por nome, categoria e status.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Refine por nome, categoria, classificação e status.</p>
               </div>
             </div>
             <Badge variant="outline" className="w-fit rounded-full border-primary/15 bg-primary/5 px-3 py-1 text-primary">
@@ -212,7 +245,7 @@ export default function Subcategorias() {
             </Badge>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(220px,1.2fr)_minmax(220px,1fr)_minmax(160px,0.7fr)_auto] lg:items-end">
+          <div className="grid gap-4 lg:grid-cols-[minmax(220px,1.2fr)_minmax(220px,1fr)_minmax(160px,0.7fr)_minmax(160px,0.7fr)_auto] lg:items-end">
             <div className="space-y-2">
               <Label htmlFor="subcategoria-nome-filter" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Nome
@@ -238,6 +271,21 @@ export default function Subcategorias() {
                 <SelectContent>
                   <SelectItem value="todas">Todas</SelectItem>
                   {categorias.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Classificação</Label>
+              <Select value={filterClassificacao} onValueChange={(value) => setFilterClassificacao(value as ClassificacaoFilter)}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todas">Todas</SelectItem>
+                  {CLASSIFICACAO_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -315,6 +363,7 @@ export default function Subcategorias() {
                         <SortIcon column="categoria" />
                       </button>
                     </th>
+                    <th className="px-4 py-2.5">Classificação</th>
                     <th className="px-4 py-2.5">Status</th>
                     <th className="px-4 py-2.5 text-right">Ações</th>
                   </tr>
@@ -344,6 +393,20 @@ export default function Subcategorias() {
                         )}
                       </td>
                       <td className="px-4 py-2">
+                        {editId === sub.id ? (
+                          <Select value={editClassificacao} onValueChange={(value) => setEditClassificacao(value as Classificacao)}>
+                            <SelectTrigger className="h-8 w-[140px] rounded-lg"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {CLASSIFICACAO_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant="outline" className="h-5 rounded-full px-2 text-[11px]">{getClassificacaoLabel(sub.classificacao)}</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
                         {sub.bloqueada ? (
                           <Badge variant="destructive" className="h-5 rounded-full px-2 text-[11px]">Bloqueada</Badge>
                         ) : (
@@ -359,7 +422,7 @@ export default function Subcategorias() {
                             </>
                           ) : (
                             <>
-                              <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary" disabled={!!sub.obrigatoria} onClick={() => { setEditId(sub.id); setEditNome(sub.nome); setEditCategoriaId(sub.categoria_id); }}><Pencil className="h-4 w-4" /></Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary" disabled={!!sub.obrigatoria} onClick={() => { setEditId(sub.id); setEditNome(sub.nome); setEditCategoriaId(sub.categoria_id); setEditClassificacao(sub.classificacao); }}><Pencil className="h-4 w-4" /></Button>
                               <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-rose-50 hover:text-rose-700" disabled={!!sub.obrigatoria} onClick={() => handleDelete(sub)}><Trash2 className="h-4 w-4" /></Button>
                               <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-slate-100" disabled={!!sub.obrigatoria} onClick={() => handleToggleBlock(sub)}>
                                 {sub.bloqueada ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}

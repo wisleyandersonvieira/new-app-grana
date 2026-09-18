@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { formatCurrencyInput, parseCurrencyInput } from '@/lib/financial';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { isVisivelPara, type Classificacao } from '@/lib/classificacao';
 
 export default function EditarReceita() {
   const { id } = useParams<{ id: string }>();
@@ -38,19 +39,33 @@ export default function EditarReceita() {
   const [blocked, setBlocked] = useState(false);
   const [blockMsg, setBlockMsg] = useState('');
 
-  const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
-  const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string }[]>([]);
+  const [categorias, setCategorias] = useState<{ id: string; nome: string; classificacao: Classificacao }[]>([]);
+  const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string; classificacao: Classificacao }[]>([]);
+  // Categoria/subcategoria originais do lançamento: continuam disponíveis mesmo que a classificação atual não seja compatível.
+  const [originalCategoriaId, setOriginalCategoriaId] = useState('');
+  const [originalSubcategoriaId, setOriginalSubcategoriaId] = useState('');
   const [contas, setContas] = useState<{ id: string; nome: string }[]>([]);
   const [bloqueios, setBloqueios] = useState<string[]>([]);
 
-  const filteredSubs = useMemo(() => subcategorias.filter((s) => s.categoria_id === categoriaId), [subcategorias, categoriaId]);
+  const filteredCategorias = useMemo(
+    () => categorias.filter((c) => isVisivelPara(c.classificacao, 'receita') || c.id === categoriaId || c.id === originalCategoriaId),
+    [categorias, categoriaId, originalCategoriaId],
+  );
+
+  const filteredSubs = useMemo(
+    () => subcategorias.filter((s) => (
+      s.categoria_id === categoriaId
+      && (isVisivelPara(s.classificacao, 'receita') || s.id === subcategoriaId || s.id === originalSubcategoriaId)
+    )),
+    [subcategorias, categoriaId, subcategoriaId, originalSubcategoriaId],
+  );
 
   useEffect(() => { if (user && id) loadData(); }, [user, id]);
 
   async function loadData() {
     const [catRes, subRes, contRes, bloqRes, recRes] = await Promise.all([
-      supabase.from('categorias').select('id, nome').order('nome'),
-      supabase.from('subcategorias').select('id, nome, categoria_id').order('nome'),
+      supabase.from('categorias').select('id, nome, classificacao').order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id, classificacao').order('nome'),
       supabase.from('contas').select('id, nome').eq('tipo', 'conta').eq('bloqueada', false).order('nome'),
       supabase.from('bloqueios').select('mes_ano, tipo'),
       supabase.from('receitas').select('*').eq('id', id!).single(),
@@ -66,6 +81,8 @@ export default function EditarReceita() {
       const d = recRes.data;
       setCategoriaId(d.categoria_id || '');
       setSubcategoriaId(d.subcategoria_id || '');
+      setOriginalCategoriaId(d.categoria_id || '');
+      setOriginalSubcategoriaId(d.subcategoria_id || '');
       setDescricao(d.descricao || '');
       setValorDisplay((d.valor as number).toFixed(2).replace('.', ','));
       if (d.data) setDataVencimento(new Date(d.data + 'T00:00:00'));
@@ -115,7 +132,7 @@ export default function EditarReceita() {
             <div className="space-y-2"><Label>Categoria *</Label>
               <Select value={categoriaId} onValueChange={(v) => { setCategoriaId(v); setSubcategoriaId(''); }} disabled={blocked}>
                 <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                <SelectContent>{categorias.map((c) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
+                <SelectContent>{filteredCategorias.map((c) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2"><Label>Subcategoria</Label>

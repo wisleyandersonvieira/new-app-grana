@@ -4,6 +4,7 @@ import { normalizeStatementDescription, startsWithUsefulPrefix, tokenizeNormaliz
 import { ItauParser } from './parsers/itau-parser';
 import { SicoobParser } from './parsers/sicoob-parser';
 import type { ImportedInvoiceItem, ParsedStatementItem, ParserContext, StatementSuggestion, SupportedBank } from './types';
+import { isVisivelPara } from '@/lib/classificacao';
 
 const parsers = [new ItauParser(), new SicoobParser()];
 type SuggestionRow = {
@@ -15,6 +16,45 @@ type SuggestionRow = {
   ultima_data_uso: string | null;
   descricao_normalizada: string;
 };
+
+const EMPTY_SUGGESTION: StatementSuggestion = {
+  categoria_id: null,
+  subcategoria_id: null,
+  categoria_nome: null,
+  confianca: 0,
+  origem: null,
+  recorrente: false,
+};
+
+/** Itens de fatura são despesas: sugestões que apontam para categoria/subcategoria não visível para despesa são descartadas. */
+export function discardSuggestionWhenNotVisibleForDespesa(
+  suggestion: StatementSuggestion,
+  visiveis: { categorias: Set<string>; subcategorias: Set<string> },
+): StatementSuggestion {
+  if (suggestion.categoria_id && !visiveis.categorias.has(suggestion.categoria_id)) return EMPTY_SUGGESTION;
+  if (suggestion.subcategoria_id && !visiveis.subcategorias.has(suggestion.subcategoria_id)) return EMPTY_SUGGESTION;
+  return suggestion;
+}
+
+async function fetchIdsVisiveisParaDespesa(userId: string) {
+  const [{ data: categorias, error: categoriasError }, { data: subcategorias, error: subcategoriasError }] =
+    await Promise.all([
+      supabase.from('categorias').select('id, classificacao').eq('usuario_id', userId),
+      supabase.from('subcategorias').select('id, classificacao').eq('usuario_id', userId),
+    ]);
+
+  if (categoriasError) throw categoriasError;
+  if (subcategoriasError) throw subcategoriasError;
+
+  return {
+    categorias: new Set(
+      (categorias ?? []).filter((item) => isVisivelPara(item.classificacao, 'despesa')).map((item) => item.id),
+    ),
+    subcategorias: new Set(
+      (subcategorias ?? []).filter((item) => isVisivelPara(item.classificacao, 'despesa')).map((item) => item.id),
+    ),
+  };
+}
 
 function scoreSimilarity(a: string, b: string): number {
   const aTokens = tokenizeNormalizedDescription(a);
@@ -100,14 +140,7 @@ function chooseSuggestion(description: string, rows: SuggestionRow[]): Statement
     };
   }
 
-  return {
-    categoria_id: null,
-    subcategoria_id: null,
-    categoria_nome: null,
-    confianca: 0,
-    origem: null,
-    recorrente: false,
-  };
+  return EMPTY_SUGGESTION;
 }
 
 export async function importInvoicePdfPreview(params: {
@@ -136,9 +169,15 @@ export async function importInvoicePdfPreview(params: {
   if (parsedItems.length === 0) {
     throw new Error('Nenhum lançamento válido foi encontrado nesta fatura.');
   }
-  const suggestionRows = await fetchSuggestionRows(params.userId, params.cartaoId);
+  const [suggestionRows, idsVisiveis] = await Promise.all([
+    fetchSuggestionRows(params.userId, params.cartaoId),
+    fetchIdsVisiveisParaDespesa(params.userId),
+  ]);
   const itens = parsedItems.map((item) => {
-    const suggestion = chooseSuggestion(item.descricao_normalizada, suggestionRows);
+    const suggestion = discardSuggestionWhenNotVisibleForDespesa(
+      chooseSuggestion(item.descricao_normalizada, suggestionRows),
+      idsVisiveis,
+    );
     return {
       ...item,
       categoria_id: suggestion.categoria_id,

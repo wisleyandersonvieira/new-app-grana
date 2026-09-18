@@ -81,7 +81,7 @@ export async function ensureCanonicalCreditCardCategory(userId: string) {
   if (!canonicalCategory) {
     const { data: createdCategory, error: createCategoryError } = await supabase
       .from('categorias')
-      .insert({ nome: CREDIT_CARD_CATEGORY_NAME, usuario_id: userId, obrigatoria: true })
+      .insert({ nome: CREDIT_CARD_CATEGORY_NAME, usuario_id: userId, obrigatoria: true, classificacao: 'despesa' })
       .select('id, nome, obrigatoria')
       .single();
 
@@ -128,6 +128,7 @@ export async function ensureCanonicalCreditCardCategory(userId: string) {
         categoria_id: canonicalCategory.id,
         usuario_id: userId,
         obrigatoria: true,
+        classificacao: 'despesa',
       })
       .select('id, nome, categoria_id, obrigatoria')
       .single();

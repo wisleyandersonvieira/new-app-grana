@@ -105,6 +105,7 @@ export function ImportTransactionsDialog({
   const [importing, setImporting] = useState(false);
 
   const isReceita = kind === 'receitas';
+  const tipo = isReceita ? 'receita' : 'despesa';
 
   async function handleFileSelected(file: File) {
     setLoadingFile(true);
@@ -119,7 +120,7 @@ export function ImportTransactionsDialog({
       }
 
       const parsed = parseTransactionImportRows(rawRows);
-      const validated = validateTransactionImportRows(parsed.rows, categories, subcategories, accounts);
+      const validated = validateTransactionImportRows(parsed.rows, categories, subcategories, accounts, tipo);
       const errors = [...parsed.errors, ...validated.errors];
 
       setPreview({

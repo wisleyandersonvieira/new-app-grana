@@ -1,8 +1,10 @@
 import { parseCurrencyInput } from '@/lib/financial';
+import { isVisivelPara, type Classificacao, type TipoLancamento } from '@/lib/classificacao';
 
 export interface ImportReferenceItem {
   id: string;
   nome: string;
+  classificacao?: Classificacao;
 }
 
 export interface ImportSubcategoryItem extends ImportReferenceItem {
@@ -163,11 +165,16 @@ export function parseTransactionImportRows(rawRows: Record<string, unknown>[]): 
   return { rows: parsedRows, errors };
 }
 
+function describeTipo(tipo: TipoLancamento) {
+  return tipo === 'receita' ? 'receitas' : 'despesas';
+}
+
 export function validateTransactionImportRows(
   rows: ParsedTransactionImportRow[],
   categories: ImportReferenceItem[],
   subcategories: ImportSubcategoryItem[],
   accounts: ImportReferenceItem[],
+  tipo?: TipoLancamento,
 ): { rows: ValidatedTransactionImportRow[]; errors: string[] } {
   const categoryMap = new Map(categories.map((item) => [normalizeHeader(item.nome), item]));
   const accountMap = new Map(accounts.map((item) => [normalizeHeader(item.nome), item]));
@@ -185,6 +192,11 @@ export function validateTransactionImportRows(
       return;
     }
 
+    if (tipo && !isVisivelPara(category.classificacao, tipo)) {
+      errors.push(`Linha ${row.rowNumber}: categoria "${row.categoriaNome}" não está disponível para ${describeTipo(tipo)}.`);
+      return;
+    }
+
     const account = accountMap.get(normalizeHeader(row.contaNome));
     if (!account) {
       errors.push(`Linha ${row.rowNumber}: conta "${row.contaNome}" não encontrada.`);
@@ -197,6 +209,10 @@ export function validateTransactionImportRows(
       const subcategory = subcategoryMap.get(key);
       if (!subcategory) {
         errors.push(`Linha ${row.rowNumber}: subcategoria "${row.subcategoriaNome}" não encontrada na categoria "${row.categoriaNome}".`);
+        return;
+      }
+      if (tipo && !isVisivelPara(subcategory.classificacao, tipo)) {
+        errors.push(`Linha ${row.rowNumber}: subcategoria "${row.subcategoriaNome}" não está disponível para ${describeTipo(tipo)}.`);
         return;
       }
       subcategoryId = subcategory.id;

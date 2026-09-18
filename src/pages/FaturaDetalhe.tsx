@@ -14,6 +14,7 @@ import { learnInvoiceCategorization } from '@/lib/fatura-import/service';
 import { normalizeInstallmentText, normalizeStatementDescription } from '@/lib/fatura-import/normalization';
 import { sanitizeCreditCardCategoryData } from '@/lib/credit-card-category';
 import { resolveInvoiceStatus } from '@/lib/invoice-status';
+import { isVisivelPara, type Classificacao } from '@/lib/classificacao';
 
 type ItemFatura = {
   id?: string;
@@ -35,8 +36,8 @@ type ItemFatura = {
   observacao_parser?: string | null;
 };
 
-type Categoria = { id: string; nome: string };
-type Subcategoria = { id: string; nome: string; categoria_id: string };
+type Categoria = { id: string; nome: string; classificacao: Classificacao };
+type Subcategoria = { id: string; nome: string; categoria_id: string; classificacao: Classificacao };
 
 function parseParcelas(parcelas: string) {
   const normalized = normalizeInstallmentText(parcelas);
@@ -84,8 +85,8 @@ export default function FaturaDetalhe() {
         .order('mes_ano', { ascending: false })
         .limit(1),
       supabase.from('itens_fatura').select('*').eq('fatura_id', id).order('data_compra', { ascending: true }),
-      supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
-      supabase.from('subcategorias').select('id, nome, categoria_id').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
+      supabase.from('categorias').select('id, nome, classificacao').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id, classificacao').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
       supabase.from('despesas').select('paga, data_pagamento').eq('usuario_id', user.id).eq('lote_id', fat.id),
     ]);
 
@@ -303,7 +304,13 @@ export default function FaturaDetalhe() {
               </thead>
               <tbody>
                 {items.map((item, idx) => {
-                  const filteredSubs = subcategorias.filter((subcategoria) => subcategoria.categoria_id === item.categoria_id);
+                  const filteredCategorias = categorias.filter((categoria) => (
+                    isVisivelPara(categoria.classificacao, 'despesa') || categoria.id === item.categoria_id
+                  ));
+                  const filteredSubs = subcategorias.filter((subcategoria) => (
+                    subcategoria.categoria_id === item.categoria_id
+                    && (isVisivelPara(subcategoria.classificacao, 'despesa') || subcategoria.id === item.subcategoria_id)
+                  ));
                   const isSuggested = Boolean(item.sugestao_origem && item.categoria_sugerida_id && item.subcategoria_sugerida_id);
                   const needsReview = !item.categoria_id || !item.subcategoria_id;
 
@@ -333,7 +340,7 @@ export default function FaturaDetalhe() {
                         <Select value={item.categoria_id} onValueChange={(v) => updateItem(idx, 'categoria_id', v)} disabled={isPaid}>
                           <SelectTrigger className="h-8 w-[170px]"><SelectValue placeholder="Categoria" /></SelectTrigger>
                           <SelectContent>
-                            {categorias.map((categoria) => <SelectItem key={categoria.id} value={categoria.id}>{categoria.nome}</SelectItem>)}
+                            {filteredCategorias.map((categoria) => <SelectItem key={categoria.id} value={categoria.id}>{categoria.nome}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </td>

@@ -44,6 +44,7 @@ import { formatCurrency } from '@/lib/financial';
 import { formatCompactCompetencia, formatDisplayDate, formatInstallmentDisplay } from '@/lib/listing-format';
 import { PayModal } from '@/components/PayModal';
 import { ImportTransactionsDialog } from '@/components/ImportTransactionsDialog';
+import type { Classificacao } from '@/lib/classificacao';
 import {
   ArrowDown,
   ArrowUp,
@@ -155,8 +156,8 @@ export default function Receitas() {
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
   const [sortField, setSortField] = useState<SortField>('data');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
-  const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string }[]>([]);
+  const [categorias, setCategorias] = useState<{ id: string; nome: string; classificacao: Classificacao }[]>([]);
+  const [subcategorias, setSubcategorias] = useState<{ id: string; nome: string; categoria_id: string; classificacao: Classificacao }[]>([]);
   const [contas, setContas] = useState<{ id: string; nome: string }[]>([]);
   const [bloqueios, setBloqueios] = useState<{ tipo: string; mes_ano: string }[]>([]);
   const [payModalOpen, setPayModalOpen] = useState(false);
@@ -178,8 +179,8 @@ export default function Receitas() {
   async function loadData() {
     setLoading(true);
     const [catRes, subRes, contRes, bloqRes] = await Promise.all([
-      supabase.from('categorias').select('id, nome').eq('usuario_id', user.id).order('nome'),
-      supabase.from('subcategorias').select('id, nome, categoria_id').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
+      supabase.from('categorias').select('id, nome, classificacao').eq('usuario_id', user.id).order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id, classificacao').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
       supabase.from('contas').select('id, nome').eq('usuario_id', user.id).eq('bloqueada', false).order('nome'),
       supabase.from('bloqueios').select('tipo, mes_ano').eq('usuario_id', user.id),
     ]);

@@ -18,9 +18,10 @@ import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { formatCurrency, formatCurrencyInput, parseCurrencyInput } from '@/lib/financial';
+import { isVisivelPara, type Classificacao } from '@/lib/classificacao';
 
-interface Categoria { id: string; nome: string; }
-interface Subcategoria { id: string; nome: string; categoria_id: string; }
+interface Categoria { id: string; nome: string; classificacao: Classificacao; }
+interface Subcategoria { id: string; nome: string; categoria_id: string; classificacao: Classificacao; }
 interface Conta { id: string; nome: string; data_saldo_inicial: string | null; }
 interface ParcelaRow { numero: number; valor: string; competencia_mes: string; competencia_ano: string; vencimento: Date; }
 
@@ -44,14 +45,18 @@ export default function NovaReceitaPage() {
   const [ultimaReceita, setUltimaReceita] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
-  const filteredSubcategorias = useMemo(() => subcategorias.filter((s) => s.categoria_id === categoriaId), [subcategorias, categoriaId]);
+  const filteredCategorias = useMemo(() => categorias.filter((c) => isVisivelPara(c.classificacao, 'receita')), [categorias]);
+  const filteredSubcategorias = useMemo(
+    () => subcategorias.filter((s) => s.categoria_id === categoriaId && isVisivelPara(s.classificacao, 'receita')),
+    [subcategorias, categoriaId],
+  );
 
   useEffect(() => { if (user) loadRef(); }, [user]);
 
   async function loadRef() {
     const [catRes, subRes, contRes, bloqRes, ultRes] = await Promise.all([
-      supabase.from('categorias').select('id, nome').eq('bloqueada', false).order('nome'),
-      supabase.from('subcategorias').select('id, nome, categoria_id').eq('bloqueada', false).order('nome'),
+      supabase.from('categorias').select('id, nome, classificacao').eq('bloqueada', false).order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id, classificacao').eq('bloqueada', false).order('nome'),
       supabase.from('contas').select('id, nome, data_saldo_inicial').eq('tipo', 'conta').eq('bloqueada', false).order('nome'),
       supabase.from('bloqueios').select('mes_ano').eq('tipo', 'competencia'),
       supabase.from('receitas').select('descricao, valor, data, categoria_id, categorias(nome)').order('created_at', { ascending: false }).limit(1),
@@ -156,7 +161,7 @@ export default function NovaReceitaPage() {
                   <Label>Categoria *</Label>
                   <Select value={categoriaId} onValueChange={(v) => { setCategoriaId(v); setSubcategoriaId(''); }}>
                     <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>{categorias.map((c) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
+                    <SelectContent>{filteredCategorias.map((c) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">

@@ -15,10 +15,11 @@ import type { ImportedInvoiceItem, SupportedBank } from '@/lib/fatura-import/typ
 import { ImportInvoiceReviewDialog } from '@/components/ImportInvoiceReviewDialog';
 import { normalizeStatementDescription } from '@/lib/fatura-import/normalization';
 import { validatePdfFile } from '@/lib/security';
+import type { Classificacao } from '@/lib/classificacao';
 
 type CartaoOption = { id: string; nome: string };
-type CategoriaOption = { id: string; nome: string };
-type SubcategoriaOption = { id: string; nome: string; categoria_id: string };
+type CategoriaOption = { id: string; nome: string; classificacao: Classificacao };
+type SubcategoriaOption = { id: string; nome: string; categoria_id: string; classificacao: Classificacao };
 
 type ImportPreviewState = {
   banco: SupportedBank;
@@ -75,13 +76,13 @@ export default function ImportarFatura() {
         .order('nome'),
       supabase
         .from('categorias')
-        .select('id, nome')
+        .select('id, nome, classificacao')
         .eq('usuario_id', user.id)
         .eq('bloqueada', false)
         .order('nome'),
       supabase
         .from('subcategorias')
-        .select('id, nome, categoria_id')
+        .select('id, nome, categoria_id, classificacao')
         .eq('usuario_id', user.id)
         .eq('bloqueada', false)
         .order('nome'),

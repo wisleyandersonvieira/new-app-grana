@@ -372,6 +372,7 @@ export type Database = {
         Row: {
           bloqueada: boolean | null
           categoria_padrao: boolean | null
+          classificacao: 'receita' | 'despesa' | 'ambos'
           created_at: string | null
           id: string
           nome: string
@@ -381,6 +382,7 @@ export type Database = {
         Insert: {
           bloqueada?: boolean | null
           categoria_padrao?: boolean | null
+          classificacao?: 'receita' | 'despesa' | 'ambos'
           created_at?: string | null
           id?: string
           nome: string
@@ -390,6 +392,7 @@ export type Database = {
         Update: {
           bloqueada?: boolean | null
           categoria_padrao?: boolean | null
+          classificacao?: 'receita' | 'despesa' | 'ambos'
           created_at?: string | null
           id?: string
           nome?: string
@@ -1069,6 +1072,7 @@ export type Database = {
         Row: {
           bloqueada: boolean | null
           categoria_id: string
+          classificacao: 'receita' | 'despesa' | 'ambos'
           created_at: string | null
           id: string
           nome: string
@@ -1079,6 +1083,7 @@ export type Database = {
         Insert: {
           bloqueada?: boolean | null
           categoria_id: string
+          classificacao?: 'receita' | 'despesa' | 'ambos'
           created_at?: string | null
           id?: string
           nome: string
@@ -1089,6 +1094,7 @@ export type Database = {
         Update: {
           bloqueada?: boolean | null
           categoria_id?: string
+          classificacao?: 'receita' | 'despesa' | 'ambos'
           created_at?: string | null
           id?: string
           nome?: string

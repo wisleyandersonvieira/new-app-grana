@@ -10,6 +10,12 @@ import { Badge } from '@/components/ui/badge';
 import { normalizeCategoryLabel } from '@/lib/credit-card-category';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import {
+  CLASSIFICACAO_OPTIONS,
+  CLASSIFICACAO_PADRAO,
+  getClassificacaoLabel,
+  type Classificacao,
+} from '@/lib/classificacao';
 
 function toTitleCase(str: string) {
   const lower = ['de', 'do', 'da', 'dos', 'das', 'e', 'em', 'no', 'na', 'nos', 'nas', 'por', 'para', 'com'];
@@ -26,9 +32,11 @@ type Categoria = {
   bloqueada: boolean | null;
   obrigatoria: boolean | null;
   categoria_padrao: boolean | null;
+  classificacao: Classificacao;
 };
 
 type StatusFilter = 'todas' | 'ativas' | 'bloqueadas';
+type ClassificacaoFilter = 'todas' | Classificacao;
 type SpecialFilter = 'todas' | 'padrao' | 'obrigatoria' | 'especial';
 type SortDirection = 'asc' | 'desc';
 
@@ -36,19 +44,22 @@ export default function Categorias() {
   const { user } = useAuth();
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [nome, setNome] = useState('');
+  const [classificacao, setClassificacao] = useState<Classificacao>(CLASSIFICACAO_PADRAO);
   const [editId, setEditId] = useState<string | null>(null);
   const [editNome, setEditNome] = useState('');
+  const [editClassificacao, setEditClassificacao] = useState<Classificacao>(CLASSIFICACAO_PADRAO);
   const [loading, setLoading] = useState(false);
   const [filterNome, setFilterNome] = useState('');
   const [filterStatus, setFilterStatus] = useState<StatusFilter>('todas');
   const [filterSpecial, setFilterSpecial] = useState<SpecialFilter>('todas');
+  const [filterClassificacao, setFilterClassificacao] = useState<ClassificacaoFilter>('todas');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const fetchCategorias = async () => {
     if (!user) return;
     const { data } = await supabase
       .from('categorias')
-      .select('id, nome, bloqueada, obrigatoria, categoria_padrao')
+      .select('id, nome, bloqueada, obrigatoria, categoria_padrao, classificacao')
       .eq('usuario_id', user.id)
       .order('nome');
     if (data) setCategorias(data);
@@ -67,20 +78,23 @@ export default function Categorias() {
         if (filterSpecial === 'padrao' && !categoria.categoria_padrao) return false;
         if (filterSpecial === 'obrigatoria' && !categoria.obrigatoria) return false;
         if (filterSpecial === 'especial' && !categoria.categoria_padrao && !categoria.obrigatoria) return false;
+        if (filterClassificacao !== 'todas' && categoria.classificacao !== filterClassificacao) return false;
         return true;
       })
       .sort((left, right) => {
         const result = left.nome.localeCompare(right.nome, 'pt-BR', { sensitivity: 'base' });
         return sortDirection === 'asc' ? result : -result;
       });
-  }, [categorias, filterNome, filterStatus, filterSpecial, sortDirection]);
+  }, [categorias, filterNome, filterStatus, filterSpecial, filterClassificacao, sortDirection]);
 
-  const hasActiveFilters = filterNome.trim() !== '' || filterStatus !== 'todas' || filterSpecial !== 'todas';
+  const hasActiveFilters =
+    filterNome.trim() !== '' || filterStatus !== 'todas' || filterSpecial !== 'todas' || filterClassificacao !== 'todas';
 
   const clearFilters = () => {
     setFilterNome('');
     setFilterStatus('todas');
     setFilterSpecial('todas');
+    setFilterClassificacao('todas');
   };
 
   const toggleNameSort = () => {
@@ -97,9 +111,14 @@ export default function Categorias() {
       setLoading(false);
       return;
     }
-    const { error } = await supabase.from('categorias').insert({ nome: formatted, usuario_id: user.id });
+    const { error } = await supabase.from('categorias').insert({ nome: formatted, usuario_id: user.id, classificacao });
     if (error) toast.error('Erro ao cadastrar categoria');
-    else { toast.success('Categoria cadastrada!'); setNome(''); fetchCategorias(); }
+    else {
+      toast.success('Categoria cadastrada!');
+      setNome('');
+      setClassificacao(CLASSIFICACAO_PADRAO);
+      fetchCategorias();
+    }
     setLoading(false);
   };
 
@@ -115,7 +134,7 @@ export default function Categorias() {
       setLoading(false);
       return;
     }
-    const { error } = await supabase.from('categorias').update({ nome: formatted }).eq('id', id);
+    const { error } = await supabase.from('categorias').update({ nome: formatted, classificacao: editClassificacao }).eq('id', id);
     if (error) { toast.error('Erro ao editar'); setLoading(false); return; }
     // Update nome in despesas/receitas is not needed — they reference by categoria_id FK
     toast.success('Categoria atualizada!');
@@ -166,14 +185,33 @@ export default function Categorias() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Input
-              placeholder="Nome da categoria"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-              className="h-11 max-w-sm rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30"
-            />
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,0.7fr)_auto] lg:items-end">
+            <div className="space-y-2">
+              <Label htmlFor="nova-categoria" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Nome
+              </Label>
+              <Input
+                id="nova-categoria"
+                placeholder="Nome da categoria"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                className="h-11 rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Classificação</Label>
+              <Select value={classificacao} onValueChange={(value) => setClassificacao(value as Classificacao)}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLASSIFICACAO_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button onClick={handleAdd} disabled={loading || !nome.trim()} className="h-11 rounded-xl px-5 font-semibold shadow-sm shadow-primary/20">
               <Plus className="mr-2 h-4 w-4" /> Adicionar
             </Button>
@@ -190,7 +228,7 @@ export default function Categorias() {
               </div>
               <div>
                 <h2 className="text-base font-semibold tracking-tight">Filtros</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Refine a listagem por nome, status e etiquetas.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Refine a listagem por nome, status, classificação e etiquetas.</p>
               </div>
             </div>
             <Badge variant="outline" className="w-fit rounded-full border-primary/15 bg-primary/5 px-3 py-1 text-primary">
@@ -198,7 +236,7 @@ export default function Categorias() {
             </Badge>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(220px,1.4fr)_minmax(160px,0.8fr)_minmax(180px,0.9fr)_auto] lg:items-end">
+          <div className="grid gap-4 lg:grid-cols-[minmax(220px,1.4fr)_minmax(160px,0.8fr)_minmax(160px,0.8fr)_minmax(180px,0.9fr)_auto] lg:items-end">
             <div className="space-y-2">
               <Label htmlFor="categoria-nome-filter" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Nome
@@ -225,6 +263,21 @@ export default function Categorias() {
                   <SelectItem value="todas">Todas</SelectItem>
                   <SelectItem value="ativas">Ativas</SelectItem>
                   <SelectItem value="bloqueadas">Bloqueadas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Classificação</Label>
+              <Select value={filterClassificacao} onValueChange={(value) => setFilterClassificacao(value as ClassificacaoFilter)}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white shadow-sm transition hover:border-primary/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todas">Todas</SelectItem>
+                  {CLASSIFICACAO_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -292,6 +345,7 @@ export default function Categorias() {
                         )}
                       </button>
                     </th>
+                    <th className="px-4 py-2.5">Classificação</th>
                     <th className="px-4 py-2.5">Status</th>
                     <th className="px-4 py-2.5 text-right">Ações</th>
                   </tr>
@@ -309,6 +363,20 @@ export default function Categorias() {
                         {cat.categoria_padrao && <Badge variant="outline" className="ml-1 h-5 rounded-full px-2 text-[11px]">Padrão</Badge>}
                       </td>
                       <td className="px-4 py-2">
+                        {editId === cat.id ? (
+                          <Select value={editClassificacao} onValueChange={(value) => setEditClassificacao(value as Classificacao)}>
+                            <SelectTrigger className="h-8 w-[140px] rounded-lg"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {CLASSIFICACAO_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant="outline" className="h-5 rounded-full px-2 text-[11px]">{getClassificacaoLabel(cat.classificacao)}</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
                         {cat.bloqueada ? (
                           <Badge variant="destructive" className="h-5 rounded-full px-2 text-[11px]">Bloqueada</Badge>
                         ) : (
@@ -324,7 +392,7 @@ export default function Categorias() {
                             </>
                           ) : (
                             <>
-                              <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary" disabled={!!cat.obrigatoria} onClick={() => { setEditId(cat.id); setEditNome(cat.nome); }} title="Editar"><Pencil className="h-4 w-4" /></Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary" disabled={!!cat.obrigatoria} onClick={() => { setEditId(cat.id); setEditNome(cat.nome); setEditClassificacao(cat.classificacao); }} title="Editar"><Pencil className="h-4 w-4" /></Button>
                               <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-rose-50 hover:text-rose-700" disabled={!!cat.obrigatoria} onClick={() => handleDelete(cat)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
                               <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg hover:bg-slate-100" disabled={!!cat.obrigatoria} onClick={() => handleToggleBlock(cat)} title={cat.bloqueada ? 'Desbloquear' : 'Bloquear'}>
                                 {cat.bloqueada ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}

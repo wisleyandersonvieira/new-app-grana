@@ -12,9 +12,10 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/financial';
 import type { ImportedInvoiceItem, SupportedBank } from '@/lib/fatura-import/types';
+import { isVisivelPara, type Classificacao } from '@/lib/classificacao';
 
-type CategoriaOption = { id: string; nome: string };
-type SubcategoriaOption = { id: string; nome: string; categoria_id: string };
+type CategoriaOption = { id: string; nome: string; classificacao: Classificacao };
+type SubcategoriaOption = { id: string; nome: string; categoria_id: string; classificacao: Classificacao };
 type ReviewInvoiceItem = ImportedInvoiceItem & { valor_input?: string };
 
 interface ImportInvoiceReviewDialogProps {
@@ -58,6 +59,8 @@ export function ImportInvoiceReviewDialog({
   onRemoveItem,
   onConfirm,
 }: ImportInvoiceReviewDialogProps) {
+  // Fatura de cartão: apenas categorias e subcategorias visíveis para despesa.
+  const visibleCategories = categories.filter((categoria) => isVisivelPara(categoria.classificacao, 'despesa'));
   const total = items.reduce((sum, item) => sum + item.valor, 0);
   const pendingCount = items.filter((item) => !item.categoria_id || !item.subcategoria_id).length;
 
@@ -102,7 +105,9 @@ export function ImportInvoiceReviewDialog({
             </thead>
             <tbody>
               {items.map((item, index) => {
-                const filteredSubcategories = subcategories.filter((subcategoria) => subcategoria.categoria_id === item.categoria_id);
+                const filteredSubcategories = subcategories.filter((subcategoria) => (
+                  subcategoria.categoria_id === item.categoria_id && isVisivelPara(subcategoria.classificacao, 'despesa')
+                ));
                 const needsReview = !item.categoria_id || !item.subcategoria_id;
 
                 return (
@@ -153,7 +158,7 @@ export function ImportInvoiceReviewDialog({
                           <SelectValue placeholder="Categoria" />
                         </SelectTrigger>
                         <SelectContent>
-                          {categories.map((categoria) => (
+                          {visibleCategories.map((categoria) => (
                             <SelectItem key={categoria.id} value={categoria.id}>
                               {categoria.nome}
                             </SelectItem>

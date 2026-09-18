@@ -25,16 +25,19 @@ import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { formatCurrency, formatCurrencyInput, parseCurrencyInput } from '@/lib/financial';
+import { isVisivelPara, type Classificacao } from '@/lib/classificacao';
 
 interface Categoria {
   id: string;
   nome: string;
+  classificacao: Classificacao;
 }
 
 interface Subcategoria {
   id: string;
   nome: string;
   categoria_id: string;
+  classificacao: Classificacao;
 }
 
 interface Conta {
@@ -125,9 +128,15 @@ export default function NovaDespesaPage() {
   const [ultimaDespesa, setUltimaDespesa] = useState<UltimaDespesa | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Filtered subcategorias based on selected categoria
+  // Categorias visíveis para despesa
+  const filteredCategorias = useMemo(
+    () => categorias.filter((c) => isVisivelPara(c.classificacao, 'despesa')),
+    [categorias]
+  );
+
+  // Subcategorias da categoria selecionada que também são visíveis para despesa
   const filteredSubcategorias = useMemo(
-    () => subcategorias.filter((s) => s.categoria_id === categoriaId),
+    () => subcategorias.filter((s) => s.categoria_id === categoriaId && isVisivelPara(s.classificacao, 'despesa')),
     [subcategorias, categoriaId]
   );
 
@@ -199,8 +208,8 @@ export default function NovaDespesaPage() {
 
   const loadReferenceData = useCallback(async () => {
     const [catRes, subRes, contRes, bloqRes] = await Promise.all([
-      supabase.from('categorias').select('id, nome').eq('bloqueada', false).order('nome'),
-      supabase.from('subcategorias').select('id, nome, categoria_id').eq('bloqueada', false).order('nome'),
+      supabase.from('categorias').select('id, nome, classificacao').eq('bloqueada', false).order('nome'),
+      supabase.from('subcategorias').select('id, nome, categoria_id, classificacao').eq('bloqueada', false).order('nome'),
       supabase.from('contas').select('id, nome, data_saldo_inicial').eq('tipo', 'conta').eq('bloqueada', false).order('nome'),
       supabase.from('bloqueios').select('mes_ano').eq('tipo', 'competencia'),
     ]);
@@ -436,7 +445,7 @@ export default function NovaDespesaPage() {
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {categorias.map((c) => (
+                      {filteredCategorias.map((c) => (
                         <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
                       ))}
                     </SelectContent>
