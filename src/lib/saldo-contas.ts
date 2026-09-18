@@ -41,9 +41,13 @@ export function getTodayIsoDate() {
   return new Date().toISOString().split('T')[0];
 }
 
+/** Consulta que aceita paginação por `range`, como os builders do Supabase. */
+type RangeQuery<T> = {
+  range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>;
+};
+
 /** Busca paginada: o PostgREST devolve no máximo 1000 linhas por requisição. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function fetchAllPaginated<T>(builder: () => any): Promise<T[]> {
+export async function fetchAllPaginated<T>(builder: () => RangeQuery<T>): Promise<T[]> {
   let from = 0;
   const all: T[] = [];
   while (true) {
