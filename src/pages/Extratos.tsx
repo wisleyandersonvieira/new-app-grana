@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency } from '@/lib/financial';
 import { exportToPDF } from '@/lib/export';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type MovimentoBase = {
   data: string;
@@ -52,7 +53,7 @@ export default function Extratos() {
   const [generated, setGenerated] = useState(false);
   const [adjustedStartDate, setAdjustedStartDate] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadContas = useCallback(() => {
     if (!user) return;
     supabase
       .from('contas')
@@ -66,6 +67,14 @@ export default function Extratos() {
         setContaId((current) => current || data[0]?.id || '');
       });
   }, [user]);
+
+  useEffect(() => { loadContas(); }, [loadContas]);
+
+  // Voltar para esta aba atualiza as contas e refaz o extrato já gerado.
+  useOnTabActivate(() => {
+    loadContas();
+    if (generated) void generate();
+  });
 
   const contaNome = useMemo(
     () => contas.find((conta) => conta.id === contaId)?.nome ?? '',

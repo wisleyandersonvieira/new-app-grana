@@ -26,6 +26,7 @@ import {
   isCreditCardCategoryName,
   sanitizeCreditCardCategoryData,
 } from '@/lib/credit-card-category';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type ItemFaturaReport = {
   id: string;
@@ -83,6 +84,10 @@ export default function ComparativoMensal() {
       (sum, monthData) => sum + Object.values(monthData).reduce((subtotal, value) => subtotal + value, 0),
       0,
     );
+
+  useOnTabActivate(() => {
+    if (generated) void generate();
+  });
 
   const generate = async () => {
     if (!user || !dataInicio || !dataFim) return;

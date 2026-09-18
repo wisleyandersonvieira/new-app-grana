@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +42,9 @@ type SortDirection = 'asc' | 'desc';
 
 export default function Categorias() {
   const { user } = useAuth();
+  // Duas abas na mesma tela duplicariam ids fixos no DOM: useId mantém cada painel independente.
+  const novaCategoriaId = useId();
+  const filtroNomeId = useId();
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [nome, setNome] = useState('');
   const [classificacao, setClassificacao] = useState<Classificacao>(CLASSIFICACAO_PADRAO);
@@ -187,11 +190,11 @@ export default function Categorias() {
         <CardContent className="p-5">
           <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,0.7fr)_auto] lg:items-end">
             <div className="space-y-2">
-              <Label htmlFor="nova-categoria" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <Label htmlFor={novaCategoriaId} className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Nome
               </Label>
               <Input
-                id="nova-categoria"
+                id={novaCategoriaId}
                 placeholder="Nome da categoria"
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
@@ -238,13 +241,13 @@ export default function Categorias() {
 
           <div className="grid gap-4 lg:grid-cols-[minmax(220px,1.4fr)_minmax(160px,0.8fr)_minmax(160px,0.8fr)_minmax(180px,0.9fr)_auto] lg:items-end">
             <div className="space-y-2">
-              <Label htmlFor="categoria-nome-filter" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <Label htmlFor={filtroNomeId} className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Nome
               </Label>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  id="categoria-nome-filter"
+                  id={filtroNomeId}
                   value={filterNome}
                   onChange={(event) => setFilterNome(event.target.value)}
                   placeholder="Buscar categoria"

@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type FaturaRow = {
   id: string; mes_ano: string; data_vencimento: string | null; valor_total: number | null;
@@ -141,6 +142,12 @@ export default function Faturas() {
   useEffect(() => {
     if (user) fetchFaturas(appliedFilters, currentPage);
   }, [user, currentPage]);
+
+  useOnTabActivate(() => {
+    if (!user) return;
+    fetchCartoes();
+    fetchFaturas(appliedFilters, currentPage);
+  });
 
   const handleApplyFilters = () => {
     setAppliedFilters(filters);

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { clearStoredTabs } from '@/lib/tabs-storage';
 
 interface Profile {
   id: string;
@@ -163,6 +164,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, checkSubscription]);
 
   const signOut = async () => {
+    // Abas internas não sobrevivem ao logout: o próximo login começa no Dashboard.
+    clearStoredTabs(user?.id);
     await supabase.auth.signOut();
     setSession(null);
     setUser(null);

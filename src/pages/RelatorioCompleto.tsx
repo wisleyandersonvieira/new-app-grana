@@ -22,6 +22,7 @@ import {
   isCreditCardCategoryName,
   sanitizeCreditCardCategoryData,
 } from '@/lib/credit-card-category';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type CatData = Record<string, Record<string, number>>;
 type SubData = Record<string, Record<string, Record<string, number>>>;
@@ -314,6 +315,10 @@ export default function RelatorioCompleto() {
     const rowKey = `${sectionKey}:${catName}`;
     setExpandedRows((prev) => ({ ...prev, [rowKey]: !prev[rowKey] }));
   };
+
+  useOnTabActivate(() => {
+    if (generated) void handleGenerate();
+  });
 
   const handleGenerate = async () => {
     if (!user) return;

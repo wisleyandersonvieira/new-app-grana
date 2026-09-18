@@ -62,6 +62,7 @@ import {
   TrendingDown,
   XCircle,
 } from 'lucide-react';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 interface DespesaRow {
   id: string;
@@ -177,6 +178,13 @@ export default function Despesas() {
     if (!user || !hasSearched) return;
     fetchDespesas(appliedFilters, currentPage);
   }, [currentPage, sortField, sortDir]);
+
+  // Voltar para esta aba recarrega a listagem: um lançamento feito em outra aba já aparece.
+  useOnTabActivate(() => {
+    if (!user) return;
+    loadData();
+    if (hasSearched) fetchDespesas(appliedFilters, currentPage);
+  });
 
   async function loadData() {
     setLoading(true);

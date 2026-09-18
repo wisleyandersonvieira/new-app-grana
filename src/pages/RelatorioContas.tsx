@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowUpDown,
@@ -45,6 +45,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type Option = {
   id: string;
@@ -264,6 +265,11 @@ function MultiSelectFilter({
 
 export default function RelatorioContas() {
   const { user } = useAuth();
+  // Duas abas na mesma tela duplicariam ids fixos no DOM: useId mantém cada painel independente.
+  const situacaoId = useId();
+  const tipoDataId = useId();
+  const periodoInicialId = useId();
+  const periodoFinalId = useId();
   const [filters, setFilters] = useState<FilterState>(getDefaultFilters());
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -407,6 +413,10 @@ export default function RelatorioContas() {
     return true;
   };
 
+  useOnTabActivate(() => {
+    if (generated) void handleGenerate();
+  });
+
   const handleGenerate = async () => {
     if (!user || !validateFilters()) return;
 
@@ -542,9 +552,9 @@ export default function RelatorioContas() {
         <CardContent className="space-y-5">
           <div className="grid gap-4 xl:grid-cols-4">
             <div className="space-y-2">
-              <Label htmlFor="situacao">Situação</Label>
+              <Label htmlFor={situacaoId}>Situação</Label>
               <select
-                id="situacao"
+                id={situacaoId}
                 value={filters.situacao}
                 onChange={(event) =>
                   setFilters((current) => ({ ...current, situacao: event.target.value as SituacaoFiltro }))
@@ -559,9 +569,9 @@ export default function RelatorioContas() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tipo-data">Tipo de data</Label>
+              <Label htmlFor={tipoDataId}>Tipo de data</Label>
               <select
-                id="tipo-data"
+                id={tipoDataId}
                 value={filters.tipoData}
                 onChange={(event) => {
                   const tipoData = event.target.value as TipoDataFiltro;
@@ -584,11 +594,11 @@ export default function RelatorioContas() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="periodo-inicial">
+              <Label htmlFor={periodoInicialId}>
                 {filters.tipoData === 'competencia' ? 'Competência inicial' : 'Data inicial'}
               </Label>
               <Input
-                id="periodo-inicial"
+                id={periodoInicialId}
                 type={filters.tipoData === 'competencia' ? 'month' : 'date'}
                 value={filters.periodoInicial}
                 onChange={(event) =>
@@ -598,11 +608,11 @@ export default function RelatorioContas() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="periodo-final">
+              <Label htmlFor={periodoFinalId}>
                 {filters.tipoData === 'competencia' ? 'Competência final' : 'Data final'}
               </Label>
               <Input
-                id="periodo-final"
+                id={periodoFinalId}
                 type={filters.tipoData === 'competencia' ? 'month' : 'date'}
                 value={filters.periodoFinal}
                 onChange={(event) =>

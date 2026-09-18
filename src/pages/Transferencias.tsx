@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/financial';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type Transferencia = {
   id: string; data: string; valor: number; observacao: string | null;
@@ -148,6 +149,12 @@ export default function Transferencias() {
   useEffect(() => {
     if (appliedFilters) fetchTransferencias(appliedFilters, currentPage);
   }, [sortKey, sortDirection, currentPage, pageSize]);
+
+  useOnTabActivate(() => {
+    if (!user) return;
+    fetchInitialData();
+    if (appliedFilters) fetchTransferencias(appliedFilters, currentPage);
+  });
 
   const total = transferencias.reduce((s, t) => s + t.valor, 0);
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));

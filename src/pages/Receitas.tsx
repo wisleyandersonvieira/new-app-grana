@@ -62,6 +62,7 @@ import {
   TrendingUp,
   XCircle,
 } from 'lucide-react';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 interface ReceitaRow {
   id: string;
@@ -175,6 +176,13 @@ export default function Receitas() {
     if (!user || !hasSearched) return;
     fetchReceitas(appliedFilters, currentPage);
   }, [currentPage, sortField, sortDir]);
+
+  // Voltar para esta aba recarrega a listagem: um lançamento feito em outra aba já aparece.
+  useOnTabActivate(() => {
+    if (!user) return;
+    loadData();
+    if (hasSearched) fetchReceitas(appliedFilters, currentPage);
+  });
 
   async function loadData() {
     setLoading(true);

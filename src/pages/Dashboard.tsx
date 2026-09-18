@@ -31,6 +31,7 @@ import {
   offsetCompetencia,
 } from '@/lib/financial';
 import { isCreditCardCategoryName } from '@/lib/credit-card-category';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type EntryRow = {
   valor: number;
@@ -578,6 +579,10 @@ export default function Dashboard() {
   const currentRange = getCompetenciaRange(competencia);
   const previousRange = getCompetenciaRange(previousCompetencia);
 
+  // Voltar para esta aba recarrega o dashboard com os lançamentos feitos em outras abas.
+  const [refreshKey, setRefreshKey] = useState(0);
+  useOnTabActivate(() => setRefreshKey((current) => current + 1));
+
   useEffect(() => {
     if (!user) return;
 
@@ -810,7 +815,7 @@ export default function Dashboard() {
     return () => {
       active = false;
     };
-  }, [competencia, user, previousRange.end, previousRange.start, currentRange.end, currentRange.start]);
+  }, [competencia, user, previousRange.end, previousRange.start, currentRange.end, currentRange.start, refreshKey]);
 
   const receitasVariation = useMemo(
     () => getVariation(dashboard?.receitasMes ?? 0, dashboard?.receitasMesAnterior ?? 0),

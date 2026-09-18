@@ -3,58 +3,23 @@ import { useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { AppSidebar } from '@/components/AppSidebar';
 import { OnboardingTutorial } from '@/components/OnboardingTutorial';
+import { TabsBar } from '@/components/TabsBar';
 import { TrialBanner } from '@/components/TrialBanner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTabs } from '@/contexts/TabsContext';
+import { getPageTitle } from '@/lib/page-titles';
 import { Button } from '@/components/ui/button';
-
-const pageTitles: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/despesas': 'Despesas',
-  '/nova-despesa': 'Nova Despesa',
-  '/receitas': 'Receitas',
-  '/nova-receita': 'Nova Receita',
-  '/contas': 'Contas',
-  '/categorias': 'Categorias',
-  '/subcategorias': 'Subcategorias',
-  '/metas': 'Metas',
-  '/cadastrar-metas': 'Cadastrar Metas',
-  '/faturas': 'Faturas',
-  '/nova-fatura': 'Nova Fatura',
-  '/importar-fatura': 'Importar Fatura',
-  '/transferencias': 'Transferências',
-  '/nova-transferencia': 'Nova Transferência',
-  '/bloqueios': 'Bloqueios',
-  '/usuarios': 'Usuários',
-  '/relatorios/contas': 'Relatório de Contas',
-  '/relatorios/detalhado': 'Relatório Detalhado',
-  '/relatorios/completo': 'Relatório Completo',
-  '/relatorios/comparativo': 'Comparativo Mensal',
-  '/relatorios/saldo': 'Saldo de Contas',
-  '/relatorios/extratos': 'Extratos',
-  '/planos': 'Planos',
-  '/minha-assinatura': 'Assinatura',
-  '/minha-conta': 'Minha Conta',
-  '/ajuda': 'Central de Ajuda',
-  '/admin/dashboard': 'Administração',
-  '/admin/usuarios': 'Usuários',
-  '/admin/assinaturas': 'Assinaturas',
-  '/admin/logs': 'Logs',
-};
-
-function getPageTitle(pathname: string) {
-  if (pathname.startsWith('/editar-receita')) return 'Editar Receita';
-  if (pathname.startsWith('/editar')) return 'Editar Despesa';
-  if (pathname.startsWith('/fatura/')) return 'Detalhe da Fatura';
-  return pageTitles[pathname] ?? 'Grana';
-}
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { profile, subscription, loading, completeOnboarding } = useAuth();
   const location = useLocation();
+  const { enabled: tabsEnabled, activePathname } = useTabs();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [autoOnboardingHandledFor, setAutoOnboardingHandledFor] = useState<string | null>(null);
-  const pageTitle = useMemo(() => getPageTitle(location.pathname), [location.pathname]);
+  // Com abas, o título do header mobile acompanha a aba ativa.
+  const currentPathname = tabsEnabled ? activePathname : location.pathname;
+  const pageTitle = useMemo(() => getPageTitle(currentPathname), [currentPathname]);
 
   // When expired and on /planos, render without sidebar (blocked layout)
   const isExpired = subscription?.status === 'expired';
@@ -62,7 +27,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setMobileMenuOpen(false);
-  }, [location.pathname]);
+  }, [currentPathname]);
 
   useEffect(() => {
     document.body.classList.toggle('mobile-menu-open', mobileMenuOpen);
@@ -113,7 +78,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
         <TrialBanner />
-        <main className="mobile-content flex-1 overflow-auto px-4 py-5 sm:px-6 md:p-8">
+        {tabsEnabled && <TabsBar />}
+        <main className="relative min-h-0 flex-1 overflow-hidden">
           {children}
         </main>
       </div>

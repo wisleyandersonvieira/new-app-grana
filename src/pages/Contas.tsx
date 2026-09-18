@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,8 @@ const formatDisplayDate = (date: string | null) => {
 
 export default function Contas() {
   const { user } = useAuth();
+  // Duas abas na mesma tela duplicariam ids fixos no DOM: useId mantém cada painel independente.
+  const filtroNomeId = useId();
   const [contas, setContas] = useState<Conta[]>([]);
   const [nome, setNome] = useState('');
   const [tipo, setTipo] = useState('conta');
@@ -231,13 +233,13 @@ export default function Contas() {
 
           <div className="grid gap-4 lg:grid-cols-[minmax(220px,1.2fr)_minmax(180px,0.8fr)_minmax(160px,0.7fr)_auto] lg:items-end">
             <div className="space-y-2">
-              <Label htmlFor="conta-nome-filter" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <Label htmlFor={filtroNomeId} className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Nome
               </Label>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  id="conta-nome-filter"
+                  id={filtroNomeId}
                   value={filterNome}
                   onChange={(event) => setFilterNome(event.target.value)}
                   placeholder="Buscar conta"

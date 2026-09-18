@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency } from '@/lib/financial';
 import { exportToExcel, exportToPDF } from '@/lib/export';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type ContaSaldo = { id: string; nome: string; tipo: string; saldo_inicial: number; data_saldo_inicial: string | null; saldo: number };
 
@@ -19,11 +20,19 @@ export default function SaldoDeContas() {
   const [result, setResult] = useState<ContaSaldo[]>([]);
   const [generated, setGenerated] = useState(false);
 
-  useEffect(() => {
+  const loadContas = useCallback(() => {
     if (!user) return;
     supabase.from('contas').select('id, nome, tipo, saldo_inicial, data_saldo_inicial, bloqueada').eq('usuario_id', user.id).order('nome')
       .then(({ data }) => { if (data) { setContas(data); setSelectedContas(data.map(c => c.id)); } });
   }, [user]);
+
+  useEffect(() => { loadContas(); }, [loadContas]);
+
+  // Voltar para esta aba atualiza as contas e refaz o relatório já gerado.
+  useOnTabActivate(() => {
+    loadContas();
+    if (generated) void generate();
+  });
 
   const fetchAll = async <T,>(builder: () => any): Promise<T[]> => {
     const pageSize = 1000;

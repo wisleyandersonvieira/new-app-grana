@@ -1,15 +1,15 @@
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import {
   LayoutDashboard, TrendingDown, TrendingUp, Wallet, Tags, Target,
   CreditCard, ArrowLeftRight, LogOut, DollarSign, ChevronRight,
   PlusCircle, List, BarChart3, FileText, ClipboardList, Users,
   CalendarOff, Layers, Settings, Receipt, Shield, ScrollText, UserCog,
-  Sparkles, UserCircle2, X, HelpCircle,
+  Sparkles, UserCircle2, X, HelpCircle, ExternalLink,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOptionalTabs } from '@/contexts/TabsContext';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -103,7 +103,36 @@ type AppSidebarProps = {
 export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const tabs = useOptionalTabs();
   const { profile, signOut, subscription } = useAuth();
+
+  // O menu fica fora dos painéis das abas: navegar por ele muda a aba ativa,
+  // e Ctrl/Cmd + clique (ou botão do meio) abre uma aba interna nova.
+  const tabsEnabled = Boolean(tabs?.enabled);
+  const currentPathname = tabsEnabled ? tabs!.activePathname : location.pathname;
+
+  const goTo = (url: string) => {
+    if (tabsEnabled) tabs!.navigateActiveTab(url);
+    else navigate(url);
+  };
+
+  const openInNewTab = (url: string) => {
+    if (tabsEnabled) tabs!.openTab(url);
+    else navigate(url);
+  };
+
+  const handleLinkClick = (event: MouseEvent<HTMLAnchorElement>, url: string) => {
+    // Nunca abrimos aba do navegador: a sessão vive em sessionStorage e exigiria novo login.
+    event.preventDefault();
+    if (event.metaKey || event.ctrlKey || event.shiftKey) openInNewTab(url);
+    else goTo(url);
+  };
+
+  const handleLinkAuxClick = (event: MouseEvent<HTMLAnchorElement>, url: string) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    openInNewTab(url);
+  };
   const isSubscriptionBlocked = Boolean(subscription?.is_subscription_blocked);
   const allowedBlockedUrls = new Set(['/minha-assinatura', '/minha-conta', '/ajuda']);
   const visibleItems = menuItems
@@ -121,7 +150,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     visibleItems.forEach((item) => {
-      if (item.children?.some((child) => location.pathname === child.url)) {
+      if (item.children?.some((child) => currentPathname === child.url)) {
         initial[item.title] = true;
       }
     });
@@ -133,7 +162,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   };
 
   const isChildActive = (children?: SubItem[]) =>
-    children?.some((child) => location.pathname === child.url) ?? false;
+    children?.some((child) => currentPathname === child.url) ?? false;
 
   return (
     <aside
@@ -166,19 +195,20 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
         <nav className="flex flex-col gap-0.5">
           {visibleItems.map((item) => {
             if (item.url) {
-              const active = location.pathname === item.url;
+              const active = currentPathname === item.url;
+              const url = item.url;
               return (
-                <NavLink
+                <a
                   key={item.title}
-                  to={item.url}
-                  end
+                  href={url}
+                  onClick={(event) => handleLinkClick(event, url)}
+                  onAuxClick={(event) => handleLinkAuxClick(event, url)}
                   className={cn(
                     'group flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-150 md:rounded-lg md:px-3 md:py-2.5 md:text-[13px]',
                     active
                       ? 'bg-sidebar-primary text-white shadow-md shadow-sidebar-primary/20'
                       : 'text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground'
                   )}
-                  activeClassName=""
                   data-tour={item.tourKey}
                 >
                   <item.icon className={cn(
@@ -186,7 +216,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
                     active ? 'text-white' : 'text-sidebar-foreground/45 group-hover:text-sidebar-foreground/70'
                   )} />
                   <span>{item.title}</span>
-                </NavLink>
+                </a>
               );
             }
 
@@ -226,26 +256,39 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
                 >
                   <div className="ml-[23px] mt-1 flex flex-col gap-1 border-l border-sidebar-border/50 py-1 pl-3 md:mt-0.5 md:gap-px md:py-0.5">
                     {item.children!.map((child) => {
-                      const childActive = location.pathname === child.url;
+                      const childActive = currentPathname === child.url;
                       return (
-                        <NavLink
-                          key={child.url}
-                          to={child.url}
-                          className={cn(
-                            'group/child flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[12.5px] transition-all duration-150',
-                            'md:text-[12.5px]',
-                            childActive
-                              ? 'bg-sidebar-primary/15 text-sidebar-primary font-semibold'
-                              : 'text-sidebar-foreground/50 hover:text-sidebar-foreground/80 hover:bg-sidebar-accent/50',
+                        <div key={child.url} className="group/child relative flex items-center">
+                          <a
+                            href={child.url}
+                            onClick={(event) => handleLinkClick(event, child.url)}
+                            onAuxClick={(event) => handleLinkAuxClick(event, child.url)}
+                            className={cn(
+                              'flex flex-1 items-center gap-2.5 rounded-md px-2.5 py-[7px] pr-8 text-[12.5px] transition-all duration-150',
+                              'md:text-[12.5px]',
+                              childActive
+                                ? 'bg-sidebar-primary/15 text-sidebar-primary font-semibold'
+                                : 'text-sidebar-foreground/50 hover:text-sidebar-foreground/80 hover:bg-sidebar-accent/50',
+                            )}
+                          >
+                            <child.icon className={cn(
+                              'h-4 w-4 shrink-0 md:h-3.5 md:w-3.5',
+                              childActive ? 'text-sidebar-primary' : 'text-sidebar-foreground/35'
+                            )} />
+                            <span>{child.title}</span>
+                          </a>
+                          {tabsEnabled && (
+                            <button
+                              type="button"
+                              aria-label={`Abrir ${child.title} em nova aba`}
+                              title="Abrir em nova aba"
+                              onClick={() => openInNewTab(child.url)}
+                              className="absolute right-1 flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/40 opacity-0 transition hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/child:opacity-100"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </button>
                           )}
-                          activeClassName=""
-                        >
-                          <child.icon className={cn(
-                            'h-4 w-4 shrink-0 md:h-3.5 md:w-3.5',
-                            childActive ? 'text-sidebar-primary' : 'text-sidebar-foreground/35'
-                          )} />
-                          <span>{child.title}</span>
-                        </NavLink>
+                        </div>
                       );
                     })}
                   </div>
@@ -277,16 +320,16 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start" className="w-60">
-              <DropdownMenuItem onClick={() => navigate('/minha-conta')}>
+              <DropdownMenuItem onClick={() => goTo('/minha-conta')}>
                 <UserCircle2 className="mr-2 h-4 w-4" />
                 Minha Conta
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/minha-assinatura')}>
+              <DropdownMenuItem onClick={() => goTo('/minha-assinatura')}>
                 <CreditCard className="mr-2 h-4 w-4" />
                 Assinatura
               </DropdownMenuItem>
               {profile.is_admin && (
-                <DropdownMenuItem onClick={() => navigate('/admin/dashboard')}>
+                <DropdownMenuItem onClick={() => goTo('/admin/dashboard')}>
                   <Shield className="mr-2 h-4 w-4" />
                   Administração
                 </DropdownMenuItem>

@@ -10,6 +10,7 @@ import { formatCurrency, getCurrentCompetencia, getMonthName } from '@/lib/finan
 import { exportToExcel } from '@/lib/export';
 import { isCreditCardCategoryName } from '@/lib/credit-card-category';
 import { getMonthDateRange } from '@/lib/comparativo-mensal';
+import { useOnTabActivate } from '@/hooks/useOnTabActivate';
 
 type Row = { data_pagamento: string; descricao: string; categoria: string; subcategoria: string; receita: number; despesa: number };
 type ItemFaturaReport = {
@@ -132,6 +133,11 @@ export default function RelatorioDetalhado() {
   };
 
   useEffect(() => { if (categorias.length > 0) generate(); }, [user, compInicio, compFim, filterCat, filterSub, categorias]);
+
+  // Voltar para esta aba refaz o relatório com os lançamentos de outras abas.
+  useOnTabActivate(() => {
+    if (categorias.length > 0) void generate();
+  });
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
